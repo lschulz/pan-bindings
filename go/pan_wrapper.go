@@ -48,7 +48,6 @@ import (
 	"unsafe"
 
 	"github.com/netsec-ethz/scion-apps/pkg/pan"
-	scaddr "github.com/scionproto/scion/go/lib/addr"
 	"inet.af/netaddr"
 )
 
@@ -84,7 +83,7 @@ func PanDeleteHandle(handle C.uintptr_t) {
 */
 //export PanResolveUDPAddr
 func PanResolveUDPAddr(address *C.cchar_t, resolved *C.PanUDPAddr) C.PanError {
-	addr, err := pan.ResolveUDPAddr(C.GoString(address))
+	addr, err := pan.ResolveUDPAddr(context.Background(), C.GoString(address))
 	if err != nil {
 		return C.PAN_ERR_ADDR_RESOLUTION
 	}
@@ -109,7 +108,7 @@ func PanUDPAddrNew(ia *C.cuint64_t, ip *C.cuint8_t, ip_len C.int, port C.uint16_
 	var addr pan.UDPAddr
 
 	// IA
-	addr.IA = (pan.IA)(scaddr.IAFromRaw((*[8]byte)(unsafe.Pointer(ia))[:]))
+	addr.IA = (pan.IA)(binary.BigEndian.Uint64((*[8]byte)(unsafe.Pointer(ia))[:]))
 
 	// IP
 	if ip_len == 4 {
@@ -139,7 +138,7 @@ func PanUDPAddrGetIA(addr C.PanUDPAddr, ia *C.uint64_t) {
 	var buf = make([]byte, 8)
 	if ia != nil {
 		address := cgo.Handle(addr).Value().(pan.UDPAddr)
-		(scaddr.IA)(address.IA).Write(buf)
+		binary.BigEndian.PutUint64(buf, (uint64)(address.IA))
 		ptr := (*[8]C.uint8_t)(unsafe.Pointer(ia))
 		for i, b := range buf[:8] {
 			ptr[i] = C.uint8_t(b)
@@ -1071,7 +1070,7 @@ func (ls *ListenSockAdapter) panToUnix() {
 		if !ok {
 			continue
 		}
-		(scaddr.IA)(pan_from.IA).Write(buffer)
+		binary.BigEndian.PutUint64(buffer, (uint64)(pan_from.IA))
 		if pan_from.IP.Is4() {
 			buffer[8] = 4
 			for i, b := range pan_from.IP.As4() {
@@ -1108,7 +1107,7 @@ func (ls *ListenSockAdapter) unixToPan() {
 
 		// Parse destination from header
 		var to pan.UDPAddr
-		to.IA = (pan.IA)(scaddr.IAFromRaw(buffer[:8]))
+		to.IA = (pan.IA)(binary.BigEndian.Uint64(buffer[:8]))
 		addr_len := binary.LittleEndian.Uint32(buffer[8:12])
 		if addr_len == 4 {
 			to.IP = netaddr.IPFrom4(*(*[4]byte)(buffer[12:16]))

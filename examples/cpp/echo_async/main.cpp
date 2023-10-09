@@ -71,7 +71,7 @@ static bool parseArgs(int argc, char* argv[], Arguments& args)
         case 'h':
         default:
             std::cout
-                << "Usage: echo-async -local LOCAL -remote REMOTE -msg MESSAGE -count COUNT\n"
+                << "Usage: echo-async -local LOCAL -remote REMOTE -msg MESSAGE\n"
                 << "  LOCAL   Local IP address and port (required for servers)\n"
                 << "  REMOTE  Scion address of the remote server (only for clients)\n"
                 << "  MESSAGE The message clients will send to the server\n";

@@ -3,8 +3,8 @@ module github.com/lschulz/libpan/go
 go 1.17
 
 require (
-	github.com/netsec-ethz/scion-apps v0.5.0
-	inet.af/netaddr v0.0.0-20210903134321-85fa6c94624e
+	github.com/netsec-ethz/scion-apps v0.5.1-0.20230920092816-28b48f6c4b4a
+	inet.af/netaddr v0.0.0-20230525184311-b8eac61e914a
 )
 
 require (
@@ -12,50 +12,47 @@ require (
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/britram/borat v0.0.0-20181011130314-f891bcfcfb9b // indirect
 	github.com/cespare/xxhash/v2 v2.1.1 // indirect
-	github.com/cheekybits/genny v1.0.0 // indirect
-	github.com/fsnotify/fsnotify v1.4.9 // indirect
-	github.com/go-kit/kit v0.10.0 // indirect
 	github.com/go-stack/stack v1.8.0 // indirect
 	github.com/go-task/slim-sprig v0.0.0-20210107165309-348f09dbbbc0 // indirect
+	github.com/golang/mock v1.6.0 // indirect
 	github.com/golang/protobuf v1.5.2 // indirect
 	github.com/google/gopacket v1.1.16-0.20190123011826-102d5ca2098c // indirect
-	github.com/grpc-ecosystem/go-grpc-middleware v1.0.1-0.20190118093823-f849b5445de4 // indirect
+	github.com/google/pprof v0.0.0-20210720184732-4bb14d4b1be1 // indirect
+	github.com/grpc-ecosystem/go-grpc-middleware v1.3.0 // indirect
 	github.com/grpc-ecosystem/go-grpc-prometheus v1.2.0 // indirect
 	github.com/grpc-ecosystem/grpc-opentracing v0.0.0-20180507213350-8e809c8a8645 // indirect
 	github.com/inconshreveable/log15 v0.0.0-20180818164646-67afb5ed74ec // indirect
-	github.com/lucas-clemente/quic-go v0.23.0 // indirect
-	github.com/marten-seemann/qtls-go1-16 v0.1.4 // indirect
-	github.com/marten-seemann/qtls-go1-17 v0.1.0 // indirect
 	github.com/mattn/go-colorable v0.1.8 // indirect
-	github.com/mattn/go-isatty v0.0.12 // indirect
+	github.com/mattn/go-isatty v0.0.14 // indirect
 	github.com/matttproud/golang_protobuf_extensions v1.0.1 // indirect
-	github.com/netsec-ethz/rains v0.3.0 // indirect
-	github.com/nxadm/tail v1.4.8 // indirect
-	github.com/onsi/ginkgo v1.16.4 // indirect
+	github.com/netsec-ethz/rains v0.5.0 // indirect
+	github.com/onsi/ginkgo/v2 v2.2.0 // indirect
 	github.com/opentracing/opentracing-go v1.2.0 // indirect
-	github.com/pelletier/go-toml v1.9.3 // indirect
-	github.com/prometheus/client_golang v1.7.1 // indirect
+	github.com/pelletier/go-toml v1.9.4 // indirect
+	github.com/prometheus/client_golang v1.11.0 // indirect
 	github.com/prometheus/client_model v0.2.0 // indirect
-	github.com/prometheus/common v0.10.0 // indirect
-	github.com/prometheus/procfs v0.1.3 // indirect
-	github.com/scionproto/scion v0.6.1-0.20210929154253-764d6e2afe47 // indirect
+	github.com/prometheus/common v0.32.0 // indirect
+	github.com/prometheus/procfs v0.6.0 // indirect
+	github.com/quic-go/qtls-go1-19 v0.3.2 // indirect
+	github.com/quic-go/qtls-go1-20 v0.2.2 // indirect
+	github.com/quic-go/quic-go v0.34.0 // indirect
+	github.com/scionproto/scion v0.6.1-0.20220202161514-5883c725f748 // indirect
 	github.com/uber/jaeger-client-go v2.29.1+incompatible // indirect
 	github.com/uber/jaeger-lib v2.0.0+incompatible // indirect
 	go.uber.org/atomic v1.7.0 // indirect
 	go.uber.org/multierr v1.6.0 // indirect
 	go.uber.org/zap v1.17.0 // indirect
-	go4.org/intern v0.0.0-20210108033219-3eb7198706b2 // indirect
-	go4.org/unsafe/assume-no-moving-gc v0.0.0-20201222180813-1025295fd063 // indirect
-	golang.org/x/crypto v0.0.0-20210322153248-0c34fe9e7dc2 // indirect
-	golang.org/x/mod v0.4.2 // indirect
-	golang.org/x/net v0.0.0-20210805182204-aaa1db679c0d // indirect
-	golang.org/x/sys v0.0.0-20210510120138-977fb7262007 // indirect
-	golang.org/x/text v0.3.6 // indirect
-	golang.org/x/tools v0.1.2 // indirect
-	golang.org/x/xerrors v0.0.0-20200804184101-5ec99f83aff1 // indirect
-	google.golang.org/genproto v0.0.0-20210602131652-f16073e35f0c // indirect
-	google.golang.org/grpc v1.38.1 // indirect
-	google.golang.org/protobuf v1.26.0 // indirect
-	gopkg.in/tomb.v1 v1.0.0-20141024135613-dd632973f1e7 // indirect
+	go4.org/intern v0.0.0-20211027215823-ae77deb06f29 // indirect
+	go4.org/unsafe/assume-no-moving-gc v0.0.0-20230525183740-e7c30c78aeb2 // indirect
+	golang.org/x/crypto v0.4.0 // indirect
+	golang.org/x/exp v0.0.0-20221205204356-47842c84f3db // indirect
+	golang.org/x/mod v0.6.0 // indirect
+	golang.org/x/net v0.7.0 // indirect
+	golang.org/x/sys v0.5.0 // indirect
+	golang.org/x/text v0.7.0 // indirect
+	golang.org/x/tools v0.2.0 // indirect
+	google.golang.org/genproto v0.0.0-20210828152312-66f60bf46e71 // indirect
+	google.golang.org/grpc v1.40.0 // indirect
+	google.golang.org/protobuf v1.28.0 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 )

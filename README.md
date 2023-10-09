@@ -15,11 +15,14 @@ functions can then be called from the C++ and Python wrappers. Therefore you
 will need the Go compiler in addition to a C and C++ compiler. The Python
 bindings require an installation of Python 3.
 
-The minimum Go version required is Go 1.17. Go 1.17.13 is recommended as it is
-currently the most recent version able to build scion-apps. If you use a more
-recent version of Go, you can download a separate copy of Go 1.17 and specify
-the path the to `go` binary in the CMake cache variable `GO_BINARY` (defaults
-to `go`).
+The minimum Go version required for the Cgo wrapper itself is Go 1.17. As this
+project depends on scion-apps you will need a Go version able to compile
+scion-apps. Currently scion-apps supports Go version 1.19 and 1.20. The code
+has been tested with Go version 1.20.9.
+
+If you have an unsupported version of Go installed, you can download a separate
+copy of Go and specify the path the to `go` binary in the CMake cache variable
+`GO_BINARY` (defaults to `go`).
 
 Building the C++ bindings requires Asio.
 
