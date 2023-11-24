@@ -18,17 +18,27 @@ bindings require an installation of Python 3.
 The minimum Go version required for the Cgo wrapper itself is Go 1.17. As this
 project depends on scion-apps you will need a Go version able to compile
 scion-apps. Currently scion-apps supports Go version 1.19 and 1.20. The code
-has been tested with Go version 1.20.9.
+has been tested with Go version 1.20.11.
 
 If you have an unsupported version of Go installed, you can download a separate
-copy of Go and specify the path the to `go` binary in the CMake cache variable
-`GO_BINARY` (defaults to `go`).
+copy of Go and specify the absolute path the to `go` binary in the CMake cache
+variable `GO_BINARY` (defaults to `go`). Go itself can install additional
+version, e.g.:
+```bash
+go install golang.org/dl/go1.20.11@latest
+# Go will usually install the new go binary in `~/go/bin/`. Add this directrory
+# to PATH or use the full path for the next command.
+go1.20.11 download
+# Run make with -D GO_BINARY=$(which go1.20.11)
+```
 
-Building the C++ bindings requires Asio.
+Building the C++ bindings requires standalone (non-boost) Asio. The C++ examples
+require ncurses on Linux.
 
 ### Building
 CMake is used as Makefile generator.
 
+#### Linux
 Release:
 ```bash
 mkdir -p build/release
@@ -65,6 +75,34 @@ ${CMAKE_INSTALL_PREFIX}/bin/scion-echo-async
 
 The debug versions of the libraries have a `d` suffix and can be installed in
 parallel to the release version.
+
+#### Windows 10/11 (MSYS2 MinGW)
+Install [MSYS2](https://www.msys2.org/) and Go. The following MSYS2 packets are
+required:
+```bash
+pacman -Sy
+pacman -S \
+  mingw-w64-ucrt-x86_64-gcc   \
+  mingw-w64-ucrt-x86_64-cmake \
+  mingw-w64-ucrt-x86_64-ninja \
+  mingw-w64-ucrt-x86_64-asio
+```
+
+Open an MSYS2 UCRT64 environment and navigate to the project root (Windows drive
+letters are available as `/c` and so on).
+```bash
+mkdir build
+cmake -D BUILD_SHARED_LIBS=ON -D GO_BINARY=$USERPROFILE/go/bin/go1.20.11 -G 'Ninja Multi-Config' -B build
+# Release:
+cmake --build build --config Release
+# Debug:
+cmake --build build --config Debug
+```
+
+Headers and binaries can be installed as well:
+```bash
+cmake --install build --config Release --prefix /usr/local
+```
 
 ### Doxygen Documentation
 You can generate API documentation in `docs/gen` by running `doxygen` in the

@@ -44,7 +44,9 @@ typedef uintptr_t PanPolicy;
 typedef uintptr_t PanSelector;
 typedef uintptr_t PanReplySelector;
 typedef uintptr_t PanConnSockAdapter;
+typedef uintptr_t PanConnSSockAdapter;
 typedef uintptr_t PanListenSockAdapter;
+typedef uintptr_t PanListenSSockAdapter;
 
 ////////////
 // Policy //

@@ -3,7 +3,7 @@ cmake_minimum_required(VERSION 3.16)
 project(pan-bindings)
 
 
-set(GO_BINARY "go" CACHE PATH "Path to go binary")
+set(GO_BINARY "go" CACHE FILEPATH "Path to go binary")
 set(BUILD_CPP ON CACHE BOOL "Build the C++ bindings")
 set(BUILD_EXAMPLES ON CACHE BOOL "Build the examples")
 set(BUILD_SHARED_LIBS OFF CACHE BOOL "Build shared libraries")

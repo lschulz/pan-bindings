@@ -12,24 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#pragma once
+#include <SDKDDKVer.h>
+#include <WinSock2.h>
 
-#include "pan/pan.hpp"
+#define WIN32_LEAN_AND_MEAN
+#include <Windows.h>
+#undef min
+#undef max
 
-
-/// \brief Path policy that interactively prompts for a path selection.
-class InteractivePolicy : public Pan::PathPolicy
-{
-public:
-    InteractivePolicy()
-    { }
-
-protected:
-    virtual void filter(Paths& paths) override;
-
-private:
-    static Pan::PathFingerprint promptForSelection(const Paths& paths);
-
-private:
-    Pan::PathFingerprint selPathFp; // fingerprint of the selected path
-};
+#include <asio.hpp>

@@ -26,6 +26,23 @@
 
 #include "go_handle.hpp"
 
+#if __INTELLISENSE__
+    #define UNIX_DGRAM_AVAILABLE
+    #define UNIX_STREAM_AVAILABLE
+#else
+#ifdef _WIN32
+    #define UNIX_STREAM_AVAILABLE
+#else
+    #define UNIX_DGRAM_AVAILABLE
+    #define UNIX_STREAM_AVAILABLE
+#endif
+#endif
+
+#ifdef _WIN32
+#define DLLEXPORT __declspec(dllexport)
+#else
+#define DLLEXPORT
+#endif
 
 namespace Pan {
 
@@ -42,6 +59,7 @@ enum class Error
 class Exception : public virtual std::exception
 {
 public:
+    DLLEXPORT
     Exception(std::uint32_t error);
 
     const std::error_code& code() const noexcept
@@ -91,7 +109,9 @@ public:
     std::uintptr_t getHandle() const noexcept { return h.get(); }
     std::uintptr_t releaseHandle() noexcept { return h.release(); }
 
+    DLLEXPORT
     bool operator==(const PathFingerprint &other) const noexcept;
+    DLLEXPORT
     bool operator!=(const PathFingerprint &other) const noexcept;
 
 private:
@@ -111,9 +131,12 @@ public:
     std::uintptr_t getHandle() const noexcept { return h.get(); }
     std::uintptr_t releaseHandle() noexcept { return h.release(); }
 
+    DLLEXPORT
     std::string toString() const;
 
+    DLLEXPORT
     PathFingerprint getFingerprint() const;
+    DLLEXPORT
     bool containsInterface(const PathInterface &iface) const;
 
 private:
@@ -123,6 +146,7 @@ private:
 class PathPolicy
 {
 public:
+    DLLEXPORT
     PathPolicy();
 
     operator bool() const noexcept { return h.isValid(); }
@@ -146,6 +170,7 @@ private:
 class PathSelector
 {
 public:
+    DLLEXPORT
     PathSelector();
 
     operator bool() const noexcept { return h.isValid(); }
@@ -178,6 +203,7 @@ private:
 class ReplySelector
 {
 public:
+    DLLEXPORT
     ReplySelector();
 
     operator bool() const noexcept { return h.isValid(); }
@@ -216,6 +242,7 @@ public:
     Endpoint(IA ia, const asio::ip::udp::endpoint& ep)
         : Endpoint(ia, ep.address(), ep.port())
     {}
+    DLLEXPORT
     Endpoint(IA ia, const asio::ip::address& ip, std::uint16_t port);
 
     operator bool() const noexcept { return h.isValid(); }
@@ -223,10 +250,14 @@ public:
     std::uintptr_t getHandle() const noexcept { return h.get(); }
     std::uintptr_t releaseHandle() noexcept { return h.release(); }
 
+    DLLEXPORT
     IA getIA() const;
+    DLLEXPORT
     asio::ip::address getIP() const;
+    DLLEXPORT
     std::uint16_t getPort() const;
 
+    DLLEXPORT
     std::string toString() const;
 
     friend std::ostream& operator<<(std::ostream& stream, const Endpoint& ep)
@@ -239,9 +270,12 @@ private:
     GoHandle h;
 };
 
+DLLEXPORT
 Endpoint resolveUDPAddr(const char* address);
+DLLEXPORT
 Endpoint resolveUDPAddr(const char* address, std::error_code &ec) noexcept;
 
+#ifdef UNIX_DGRAM_AVAILABLE
 /// \brief Unix datagram socket adapter (see PanNewListenSockAdapter())
 ///
 /// Cannot be copied as we would have no way of knowing when the last copy goes
@@ -263,24 +297,65 @@ public:
     std::uintptr_t getHandle() const noexcept { return h.get(); }
     std::uintptr_t releaseHandle() noexcept { return h.release(); }
 
+    DLLEXPORT
     void close() noexcept;
 
 private:
+    DLLEXPORT
     ListenSockAdapter(GoHandle handle);
     friend class ListenConn;
 
 private:
     GoHandle h;
 };
+#endif // UNIX_DGRAM_AVAILABLE
+
+#ifdef UNIX_STREAM_AVAILABLE
+/// \brief Unix stream socket adapter (see PanNewListenSockAdapter())
+///
+/// Cannot be copied as we would have no way of knowing when the last copy goes
+/// out of scope and close() should be called by the destructor without reference
+/// counting. If required use a `std::shared_ptr`.
+class ListenSSockAdapter final
+{
+public:
+    ListenSSockAdapter() = default;
+    ListenSSockAdapter(const ListenSSockAdapter& other) = delete;
+    ListenSSockAdapter(ListenSSockAdapter&& other) = default;
+    ListenSSockAdapter& operator=(const ListenSSockAdapter& other) = delete;
+    ListenSSockAdapter& operator=(ListenSSockAdapter&& other) = default;
+
+    ~ListenSSockAdapter() noexcept { close(); }
+
+    operator bool() const noexcept { return h.isValid(); }
+    bool isValid() const noexcept { return h.isValid(); }
+    std::uintptr_t getHandle() const noexcept { return h.get(); }
+    std::uintptr_t releaseHandle() noexcept { return h.release(); }
+
+    DLLEXPORT
+    void close() noexcept;
+
+private:
+    DLLEXPORT
+    ListenSSockAdapter(GoHandle handle) noexcept;
+    friend class ListenConn;
+
+private:
+    GoHandle h;
+};
+#endif // UNIX_STREAM_AVAILABLE
 
 class ListenConn final
 {
 public:
     /// \brief Create the connection object without listening yet.
+    DLLEXPORT
     ListenConn(std::unique_ptr<ReplySelector> selector = nullptr) noexcept;
     /// \brief Create the connection object and start listening.
+    DLLEXPORT
     ListenConn(const char* bind, std::unique_ptr<ReplySelector> selector);
     /// \brief Create the connection object and start listening.
+    DLLEXPORT
     ListenConn(const char* bind, std::unique_ptr<ReplySelector> selector, std::error_code &ec) noexcept;
 
     ListenConn(const ListenConn& other) = delete;
@@ -296,35 +371,61 @@ public:
     std::uintptr_t getHandle() const noexcept { return h.get(); }
     std::uintptr_t releaseHandle() noexcept { return h.release(); }
 
+    DLLEXPORT
     void listen(const char* bind);
+    DLLEXPORT
     void listen(const char* bind, std::error_code &ec) noexcept;
 
+    DLLEXPORT
     void close() noexcept;
 
+    DLLEXPORT
     Endpoint getLocalEndpoint() const;
 
+    DLLEXPORT
     void setDeadline(std::chrono::milliseconds t);
+    DLLEXPORT
     void setReadDeadline(std::chrono::milliseconds t);
+    DLLEXPORT
     void setWriteDeadline(std::chrono::milliseconds t);
 
+    DLLEXPORT
     std::size_t readFrom(asio::mutable_buffer buffer, Endpoint* from);
+    DLLEXPORT
     std::size_t readFrom(asio::mutable_buffer buffer, Endpoint* from, std::error_code& ec) noexcept;
+    DLLEXPORT
     std::size_t readFromVia(asio::mutable_buffer buffer, Endpoint* from, Path* path);
+    DLLEXPORT
     std::size_t readFromVia(asio::mutable_buffer buffer, Endpoint* from, Path* path, std::error_code& ec) noexcept;
 
+    DLLEXPORT
     std::size_t writeTo(asio::const_buffer buffer, const Endpoint& to);
+    DLLEXPORT
     std::size_t writeTo(asio::const_buffer buffer, const Endpoint& to, std::error_code& ec) noexcept;
+    DLLEXPORT
     std::size_t writeToVia(asio::const_buffer buffer, const Endpoint& to, const Path& path);
+    DLLEXPORT
     std::size_t writeToVia(asio::const_buffer buffer, const Endpoint& to, const Path& path, std::error_code& ec) noexcept;
 
+#ifdef UNIX_DGRAM_AVAILABLE
+    DLLEXPORT
     ListenSockAdapter createSockAdapter(const char* goSocketPath, const char* cSocketPath);
-    ListenSockAdapter createSockAdapter(const char* goSocketPath, const char* cSocketPath, std::error_code &ec);
+    DLLEXPORT
+    ListenSockAdapter createSockAdapter(const char* goSocketPath, const char* cSocketPath, std::error_code &ec) noexcept;
+#endif
+#ifdef UNIX_STREAM_AVAILABLE
+    DLLEXPORT
+    ListenSSockAdapter createSSockAdapter(const char* goSocketPath);
+    DLLEXPORT
+    ListenSSockAdapter createSSockAdapter(const char* goSocketPath, std::error_code &ec) noexcept;
+#endif
 
 private:
     GoHandle h;
     std::unique_ptr<ReplySelector> selector;
 };
 
+#ifdef UNIX_DGRAM_AVAILABLE
 /// \brief Unix datagram socket adapter (see PanNewConnSockAdapter())
 ///
 /// Cannot be copied as we would have no way of knowing when the last copy goes
@@ -346,26 +447,67 @@ public:
     std::uintptr_t getHandle() const noexcept { return h.get(); }
     std::uintptr_t releaseHandle() noexcept { return h.release(); }
 
+    DLLEXPORT
     void close() noexcept;
 
 private:
-    ConnSockAdapter(GoHandle handle);
+    DLLEXPORT
+    ConnSockAdapter(GoHandle handle) noexcept;
     friend class Conn;
 
 private:
     GoHandle h;
 };
+#endif // UNIX_DGRAM_AVAILABLE
+
+#ifdef UNIX_STREAM_AVAILABLE
+/// \brief Unix datagram socket adapter (see PanNewConnSSockAdapter())
+///
+/// Cannot be copied as we would have no way of knowing when the last copy goes
+/// out of scope and close() should be called by the destructor without reference
+/// counting. If required use a `std::shared_ptr`.
+class ConnSSockAdapter
+{
+public:
+    ConnSSockAdapter() = default;
+    ConnSSockAdapter(const ConnSSockAdapter& other) = delete;
+    ConnSSockAdapter(ConnSSockAdapter&& other) = default;
+    ConnSSockAdapter& operator=(const ConnSSockAdapter& other) = delete;
+    ConnSSockAdapter& operator=(ConnSSockAdapter&& other) = default;
+
+    ~ConnSSockAdapter() noexcept { close(); }
+
+    operator bool() const noexcept { return h.isValid(); }
+    bool isValid() const noexcept { return h.isValid(); }
+    std::uintptr_t getHandle() const noexcept { return h.get(); }
+    std::uintptr_t releaseHandle() noexcept { return h.release(); }
+
+    DLLEXPORT
+    void close() noexcept;
+
+private:
+    DLLEXPORT
+    ConnSSockAdapter(GoHandle handle) noexcept;
+    friend class Conn;
+
+private:
+    GoHandle h;
+};
+#endif // UNIX_STREAM_AVAILABLE
 
 class Conn final
 {
 public:
     /// \brief Create to connection object without dialing.
+    DLLEXPORT
     Conn(std::unique_ptr<PathPolicy> policy = nullptr,
         std::unique_ptr<PathSelector> selector = nullptr) noexcept;
     /// \brief Create and dial the connection.
+    DLLEXPORT
     Conn(const char *local, const Endpoint& remote,
         std::unique_ptr<PathPolicy> policy, std::unique_ptr<PathSelector> selector);
     /// \brief Create and dial the connection.
+    DLLEXPORT
     Conn(const char *local, const Endpoint& remote,
         std::unique_ptr<PathPolicy> policy, std::unique_ptr<PathSelector> selector,
         std::error_code &ec) noexcept;
@@ -383,30 +525,56 @@ public:
     std::uintptr_t getHandle() const noexcept { return h.get(); }
     std::uintptr_t releaseHandle() noexcept { return h.release(); }
 
+    DLLEXPORT
     void dial(const char *local, const Endpoint& remote);
+    DLLEXPORT
     void dial(const char *local, const Endpoint& remote, std::error_code &ec) noexcept;
 
+    DLLEXPORT
     void close() noexcept;
 
+    DLLEXPORT
     Endpoint getLocalEndpoint() const;
+    DLLEXPORT
     Endpoint getRemoteEndpoint() const;
 
+    DLLEXPORT
     void setDeadline(std::chrono::milliseconds t);
+    DLLEXPORT
     void setReadDeadline(std::chrono::milliseconds t);
+    DLLEXPORT
     void setWriteDeadline(std::chrono::milliseconds t);
 
+    DLLEXPORT
     std::size_t read(asio::mutable_buffer buffer);
+    DLLEXPORT
     std::size_t read(asio::mutable_buffer buffer, std::error_code& ec) noexcept;
+    DLLEXPORT
     std::size_t readVia(asio::mutable_buffer buffer, Path* path);
+    DLLEXPORT
     std::size_t readVia(asio::mutable_buffer buffer, Path* path, std::error_code& ec) noexcept;
 
+    DLLEXPORT
     std::size_t write(asio::const_buffer buffer);
+    DLLEXPORT
     std::size_t write(asio::const_buffer buffer, std::error_code& ec) noexcept;
+    DLLEXPORT
     std::size_t writeVia(asio::const_buffer buffer, const Path& path);
+    DLLEXPORT
     std::size_t writeVia(asio::const_buffer buffer, const Path& path, std::error_code& ec) noexcept;
 
+#ifdef UNIX_DGRAM_AVAILABLE
+    DLLEXPORT
     ConnSockAdapter createSockAdapter(const char* goSocketPath, const char* cSocketPath);
+    DLLEXPORT
     ConnSockAdapter createSockAdapter(const char* goSocketPath, const char* cSocketPath, std::error_code &ec) noexcept;
+#endif
+#ifdef UNIX_STREAM_AVAILABLE
+    DLLEXPORT
+    ConnSSockAdapter createSSockAdapter(const char* goSocketPath);
+    DLLEXPORT
+    ConnSSockAdapter createSSockAdapter(const char* goSocketPath, std::error_code &ec) noexcept;
+#endif
 
 private:
     GoHandle h;

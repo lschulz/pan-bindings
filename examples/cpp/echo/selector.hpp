@@ -14,7 +14,7 @@
 
 #pragma once
 
-#include "pan.hpp"
+#include "pan/pan.hpp"
 
 #include <mutex>
 #include <vector>

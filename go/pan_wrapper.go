@@ -15,7 +15,8 @@
 package main
 
 // #cgo CFLAGS: -I../include
-// #include "pan_cdefs.h"
+// #include "pan/pan_cdefs.h"
+// #define PAN_STREAM_HDR_SIZE 4
 // #define PAN_ADDR_HDR_SIZE 32
 // /** \file
 //	* PAN C Wrapper
@@ -51,6 +52,7 @@ import (
 	"inet.af/netaddr"
 )
 
+const STREAM_HDR_SIZE = 4
 const ADDR_HDR_SIZE = 32
 
 /**
@@ -1011,6 +1013,64 @@ func PanConnClose(conn C.PanConn) C.PanError {
 // ListenSockAdapter //
 ///////////////////////
 
+/**
+\brief Open a Unix datagram socket at `listen_addr` as proxy for `pan_conn`.
+
+All packets received by `pan_conn` are forwarded from `listen_addr` to `client_addr`.
+All packets received from the Unix socket are forwarded to `pan_conn`.
+The SCION address of the source or destination is prepended to the payload in a
+32 byte header:
+\verbatim
+byte 0       1       2       3       4       5       6       7
+     +-------+-------+-------+-------+-------+-------+-------+-------+
+   0 |    ISD (BE)   |                     ASN (BE)                  |
+     +-------+-------+-------+-------+-------+-------+-------+-------+
+   8 |    Host Addr. Length (LE)     |                               |
+     +-------+-------+-------+-------+                               |
+  16 |                         Host Address (BE)                     |
+     +                               +-------+-------+-------+-------+
+  24 |                               | UDP Port (LE) |       0       |
+     +-------+-------+-------+-------+-------+-------+-------+-------+
+BE = big-endian
+LE = little-endian
+\endverbatim
+
+\param[in] pan_conn Listening PAN connection.
+\param[in] listen_addr Local address of the socket in the file system.
+\param[in] client_addr Address of the other end of the connection in the C part
+	of the program.
+\param[out] adapter Socket adapter object.
+\ingroup adapter
+*/
+//export PanNewListenSockAdapter
+func PanNewListenSockAdapter(
+	pan_conn C.PanListenConn, listen_addr *C.cchar_t, client_addr *C.cchar_t,
+	adapter *C.PanListenSockAdapter) C.PanError {
+
+	ls, err := NewListenSockAdapter(
+		cgo.Handle(pan_conn).Value().(pan.ListenConn),
+		C.GoString(listen_addr),
+		C.GoString(client_addr))
+	if err != nil {
+		return C.PAN_ERR_FAILED
+	}
+
+	ptr := (*C.PanListenSockAdapter)(unsafe.Pointer(adapter))
+	*ptr = C.PanListenSockAdapter(cgo.NewHandle(ls))
+	return C.PAN_ERR_OK
+}
+
+/**
+\brief Close the Unix domain socket **and the PAN connection**.
+\ingroup adapter
+*/
+//export PanListenSockAdapterClose
+func PanListenSockAdapterClose(adapter C.PanListenSockAdapter) C.PanError {
+	ls := cgo.Handle(adapter).Value().(*ListenSockAdapter)
+	ls.Close()
+	return C.PAN_ERR_OK
+}
+
 type ListenSockAdapter struct {
 	pan_conn    pan.ListenConn
 	unix_conn   *net.UnixConn
@@ -1126,67 +1186,51 @@ func (ls *ListenSockAdapter) unixToPan() {
 	}
 }
 
+/////////////////////
+// ConnSockAdapter //
+/////////////////////
+
 /**
-\brief Open a Unix datagram domain socket at `listen_addr` as proxy for `pan_conn`.
+\brief Open a Unix datagram socket at `listen_addr` as proxy for `pan_conn`.
 
-All packets received by `pan_conn` are forwarded from `listen_addr` to `client_addr`.
-All packets received from the domain socket are forwarded to `pan_conn`.
-The SCION address of the source or destination is prepended to the payload in a
-32 byte header:
-\verbatim
-byte 0       1       2       3       4       5       6       7
-     +-------+-------+-------+-------+-------+-------+-------+-------+
-   0 |    ISD (BE)   |                     ASN (BE)                  |
-     +-------+-------+-------+-------+-------+-------+-------+-------+
-   8 |    Host Addr. Length (LE)     |                               |
-     +-------+-------+-------+-------+                               |
-  16 |                         Host Address (BE)                     |
-     +                               +-------+-------+-------+-------+
-  24 |                               | UDP Port (LE) |       0       |
-     +-------+-------+-------+-------+-------+-------+-------+-------+
-BE = big-endian
-LE = little-endian
-\endverbatim
+All packets received by pan_conn are forwarded from `listen_addr` to `client_addr`.
+All packets received from the unix socket are forwarded to `pan_conn`.
 
-\param[in] pan_conn Listening PAN connection.
-\param[in] listen_addr Local address of the domain socket in the file system.
+\param[in] pan_conn Connected PAN connection.
+\param[in] listen_addr Local address of the unix socket in the file system.
 \param[in] client_addr Address of the other end of the connection in the C part
 	of the program.
 \param[out] adapter Socket adapter object.
 \ingroup adapter
 */
-//export PanNewListenSockAdapter
-func PanNewListenSockAdapter(
-	pan_conn C.PanListenConn, listen_addr *C.cchar_t, client_addr *C.cchar_t,
-	adapter *C.PanListenSockAdapter) C.PanError {
+//export PanNewConnSockAdapter
+func PanNewConnSockAdapter(
+	pan_conn C.PanConn, listen_addr *C.cchar_t, client_addr *C.cchar_t,
+	adapter *C.PanConnSockAdapter) C.PanError {
 
-	ls, err := NewListenSockAdapter(
-		cgo.Handle(pan_conn).Value().(pan.ListenConn),
+	ls, err := NewConnSockAdapter(
+		cgo.Handle(pan_conn).Value().(pan.Conn),
 		C.GoString(listen_addr),
 		C.GoString(client_addr))
 	if err != nil {
 		return C.PAN_ERR_FAILED
 	}
 
-	ptr := (*C.PanListenSockAdapter)(unsafe.Pointer(adapter))
-	*ptr = C.PanListenSockAdapter(cgo.NewHandle(ls))
+	ptr := (*C.PanConnSockAdapter)(unsafe.Pointer(adapter))
+	*ptr = C.PanConnSockAdapter(cgo.NewHandle(ls))
 	return C.PAN_ERR_OK
 }
 
 /**
-\brief Close the unix socket **and the PAN connection**.
+\brief Close the Unix domain socket **and the PAN connection**.
 \ingroup adapter
 */
-//export PanListenSockAdapterClose
-func PanListenSockAdapterClose(adapter C.PanListenSockAdapter) C.PanError {
-	ls := cgo.Handle(adapter).Value().(*ListenSockAdapter)
+//export PanConnSockAdapterClose
+func PanConnSockAdapterClose(adapter C.PanConnSockAdapter) C.PanError {
+	ls := cgo.Handle(adapter).Value().(*ConnSockAdapter)
 	ls.Close()
 	return C.PAN_ERR_OK
 }
-
-/////////////////////
-// ConnSockAdapter //
-/////////////////////
 
 type ConnSockAdapter struct {
 	pan_conn    pan.Conn
@@ -1242,7 +1286,7 @@ func (cs *ConnSockAdapter) panToUnix() {
 			return
 		}
 
-		// Pass to domain socket
+		// Pass to Unix domain socket
 		_, err = cs.unix_conn.WriteToUnix(buffer[:read], cs.unix_remote)
 		if err != nil {
 			return
@@ -1253,7 +1297,7 @@ func (cs *ConnSockAdapter) panToUnix() {
 func (cs *ConnSockAdapter) unixToPan() {
 	var buffer = make([]byte, 4096)
 	for {
-		// Read from domain socket
+		// Read from Unix domain socket
 		read, _, err := cs.unix_conn.ReadFromUnix(buffer)
 		if err != nil {
 			return
@@ -1267,46 +1311,329 @@ func (cs *ConnSockAdapter) unixToPan() {
 	}
 }
 
+////////////////////////
+// ListenSSockAdapter //
+////////////////////////
+
 /**
-\brief Open a Unix datagram domain socket at `listen_addr` as proxy for `pan_conn`.
+\brief Open a Unix stream socket at `listen_addr` as proxy for `pan_conn`.
 
-All packets received by pan_conn are forwarded from `listen_addr` to `client_addr`.
-All packets received from the unix socket are forwarded to `pan_conn`.
+Behaves identical to `PanNewListenSockAdapter` except that a stream socket is
+used instead of a datagram socket. Packet borders in the stream are determined
+by prepending a four byte message length (little endian) in front of every
+packet sent or received on the Unix socket.
 
-\param[in] pan_conn Connected PAN connection.
-\param[in] listen_addr Local address of the unix socket in the file system.
-\param[in] client_addr Address of the other end of the connection in the C part
-	of the program.
+When initially created, the socket will listens for and accept exactly one
+connection.
+
+The stream variants of the socket adapters are intended for systems lacking
+support for Unix datagram sockets, e.g., Windows. A more native solution on
+Windows might be named pipes, however they have a very different API from
+sockets.
+
+\param[in] pan_conn Listening PAN connection.
+\param[in] listen_addr Local address of the socket in the file system.
 \param[out] adapter Socket adapter object.
 \ingroup adapter
 */
-//export PanNewConnSockAdapter
-func PanNewConnSockAdapter(
-	pan_conn C.PanConn, listen_addr *C.cchar_t, client_addr *C.cchar_t,
-	adapter *C.PanConnSockAdapter) C.PanError {
+//export PanNewListenSSockAdapter
+func PanNewListenSSockAdapter(
+	pan_conn C.PanListenConn, listen_addr *C.cchar_t,
+	adapter *C.PanListenSSockAdapter) C.PanError {
 
-	ls, err := NewConnSockAdapter(
-		cgo.Handle(pan_conn).Value().(pan.Conn),
-		C.GoString(listen_addr),
-		C.GoString(client_addr))
+	ls, err := NewListenSSockAdapter(
+		cgo.Handle(pan_conn).Value().(pan.ListenConn),
+		C.GoString(listen_addr))
 	if err != nil {
 		return C.PAN_ERR_FAILED
 	}
 
-	ptr := (*C.PanListenSockAdapter)(unsafe.Pointer(adapter))
-	*ptr = C.PanConnSockAdapter(cgo.NewHandle(ls))
+	ptr := (*C.PanListenSSockAdapter)(unsafe.Pointer(adapter))
+	*ptr = C.PanListenSSockAdapter(cgo.NewHandle(ls))
 	return C.PAN_ERR_OK
 }
 
 /**
-\brief Close the unix socket **and the PAN connection**.
+\brief Close the Unix domain socket **and the PAN connection**.
 \ingroup adapter
 */
-//export PanConnSockAdapterClose
-func PanConnSockAdapterClose(adapter C.PanConnSockAdapter) C.PanError {
-	ls := cgo.Handle(adapter).Value().(*ConnSockAdapter)
+//export PanListenSSockAdapterClose
+func PanListenSSockAdapterClose(adapter C.PanListenSSockAdapter) C.PanError {
+	ls := cgo.Handle(adapter).Value().(*ListenSSockAdapter)
 	ls.Close()
 	return C.PAN_ERR_OK
+}
+
+type ListenSSockAdapter struct {
+	pan_conn      pan.ListenConn
+	unix_listener *net.UnixListener
+	unix_conn     *net.UnixConn
+}
+
+func NewListenSSockAdapter(
+	pan_conn pan.ListenConn, listen_addr string) (*ListenSSockAdapter, error) {
+
+	listen, err := net.ResolveUnixAddr("unix", listen_addr)
+	if err != nil {
+		return nil, err
+	}
+
+	os.Remove(listen_addr)
+	unix_listener, err := net.ListenUnix("unix", listen)
+	if err != nil {
+		return nil, err
+	}
+	unix_listener.SetUnlinkOnClose(true)
+
+	adapter := &ListenSSockAdapter{
+		pan_conn:      pan_conn,
+		unix_listener: unix_listener,
+		unix_conn:     nil,
+	}
+
+	go adapter.waitForConn()
+
+	return adapter, nil
+}
+
+func (ls *ListenSSockAdapter) waitForConn() {
+	conn, err := ls.unix_listener.AcceptUnix()
+	defer ls.unix_listener.Close()
+	if err != nil {
+		return
+	}
+	ls.unix_conn = conn
+	go ls.panToUnix()
+	go ls.unixToPan()
+}
+
+func (ls *ListenSSockAdapter) Close() error {
+	ls.pan_conn.Close()
+	ls.unix_conn.Close()
+	return nil
+}
+
+func (ls *ListenSSockAdapter) panToUnix() {
+	var buffer = make([]byte, 4096)
+	for {
+		// Read from network
+		read, from, err := ls.pan_conn.ReadFrom(buffer[STREAM_HDR_SIZE+ADDR_HDR_SIZE:])
+		if err != nil {
+			return
+		}
+
+		// Prepend message length
+		binary.LittleEndian.PutUint32(buffer[0:4], uint32(read+ADDR_HDR_SIZE))
+
+		// Prepend from header to received bytes
+		pan_from, ok := from.(pan.UDPAddr)
+		if !ok {
+			continue
+		}
+		binary.BigEndian.PutUint64(buffer[4:12], (uint64)(pan_from.IA))
+		if pan_from.IP.Is4() {
+			buffer[12] = 4
+			for i, b := range pan_from.IP.As4() {
+				buffer[16+i] = b
+			}
+		} else {
+			buffer[12] = 16
+			for i, b := range pan_from.IP.As16() {
+				buffer[16+i] = b
+			}
+		}
+		binary.LittleEndian.PutUint16(buffer[32:34], pan_from.Port)
+		message := buffer[:STREAM_HDR_SIZE+ADDR_HDR_SIZE+read]
+
+		// Pass to Unix domain socket
+		_, err = ls.unix_conn.Write(message)
+		if err != nil {
+			return
+		}
+	}
+}
+
+func (ls *ListenSSockAdapter) unixToPan() {
+	var buffer = make([]byte, 4096)
+	for {
+		// Read from Unix domain socket
+		read, err := ls.unix_conn.Read(buffer[:STREAM_HDR_SIZE])
+		if err != nil || read < STREAM_HDR_SIZE {
+			return
+		}
+		msglen := uint(binary.LittleEndian.Uint32(buffer[0:4]))
+		if msglen > uint(len(buffer)) {
+			return
+		}
+		read, err = ls.unix_conn.Read(buffer[:msglen])
+		if err != nil || read < ADDR_HDR_SIZE {
+			continue
+		}
+
+		// Parse destination from header
+		var to pan.UDPAddr
+		to.IA = (pan.IA)(binary.BigEndian.Uint64(buffer[:8]))
+		addr_len := binary.LittleEndian.Uint32(buffer[8:12])
+		if addr_len == 4 {
+			to.IP = netaddr.IPFrom4(*(*[4]byte)(buffer[12:16]))
+		} else if addr_len == 16 {
+			to.IP = netaddr.IPFrom16(*(*[16]byte)(buffer[12:28]))
+		} else {
+			continue
+		}
+		to.Port = binary.LittleEndian.Uint16(buffer[28:30])
+
+		// Pass to network socket
+		_, err = ls.pan_conn.WriteTo(buffer[ADDR_HDR_SIZE:read], to)
+		if err != nil {
+			return
+		}
+	}
+}
+
+//////////////////////
+// ConnSSockAdapter //
+//////////////////////
+
+/**
+\brief Open a Unix stream socket at `listen_addr` as proxy for `pan_conn`.
+
+Behaves identical to `PanNewConnSockAdapter` except that a stream socket is
+used instead of a datagram socket. Packet borders in the stream are determined
+by prepending a four byte message length (little endian) in front of every
+packet sent or received on the Unix socket.
+
+When initially created, the socket will listens for and accept exactly one
+connection.
+
+The stream variants of the socket adapters are intended for systems lacking
+support for Unix datagram sockets, e.g., Windows. A more native solution on
+Windows might be named pipes, however they have a very different API from
+sockets.
+
+\param[in] pan_conn Connected PAN connection.
+\param[in] listen_addr Local address of the Unix socket in the file system.
+\param[out] adapter Socket adapter object.
+\ingroup adapter
+*/
+//export PanNewConnSSockAdapter
+func PanNewConnSSockAdapter(
+	pan_conn C.PanConn, listen_addr *C.cchar_t,
+	adapter *C.PanConnSSockAdapter) C.PanError {
+
+	ls, err := NewConnSSockAdapter(
+		cgo.Handle(pan_conn).Value().(pan.Conn),
+		C.GoString(listen_addr))
+	if err != nil {
+		return C.PAN_ERR_FAILED
+	}
+
+	ptr := (*C.PanConnSSockAdapter)(unsafe.Pointer(adapter))
+	*ptr = C.PanConnSSockAdapter(cgo.NewHandle(ls))
+	return C.PAN_ERR_OK
+}
+
+/**
+\brief Close the Unix domain socket **and the PAN connection**.
+\ingroup adapter
+*/
+//export PanConnSSockAdapterClose
+func PanConnSSockAdapterClose(adapter C.PanConnSSockAdapter) C.PanError {
+	ls := cgo.Handle(adapter).Value().(*ConnSSockAdapter)
+	ls.Close()
+	return C.PAN_ERR_OK
+}
+
+type ConnSSockAdapter struct {
+	pan_conn      pan.Conn
+	unix_listener *net.UnixListener
+	unix_conn     *net.UnixConn
+}
+
+func NewConnSSockAdapter(
+	pan_conn pan.Conn, listen_addr string) (*ConnSSockAdapter, error) {
+
+	listen, err := net.ResolveUnixAddr("unix", listen_addr)
+	if err != nil {
+		return nil, err
+	}
+
+	os.Remove(listen_addr)
+	unix_listener, err := net.ListenUnix("unix", listen)
+	if err != nil {
+		return nil, err
+	}
+	unix_listener.SetUnlinkOnClose(true)
+
+	adapter := &ConnSSockAdapter{
+		pan_conn:      pan_conn,
+		unix_listener: unix_listener,
+		unix_conn:     nil,
+	}
+
+	go adapter.waitForConn()
+
+	return adapter, nil
+}
+
+func (cs *ConnSSockAdapter) waitForConn() {
+	conn, err := cs.unix_listener.AcceptUnix()
+	defer cs.unix_listener.Close()
+	if err != nil {
+		return
+	}
+	cs.unix_conn = conn
+	go cs.panToUnix()
+	go cs.unixToPan()
+}
+
+func (cs *ConnSSockAdapter) Close() error {
+	cs.pan_conn.Close()
+	cs.unix_conn.Close()
+	return nil
+}
+
+func (cs *ConnSSockAdapter) panToUnix() {
+	var buffer = make([]byte, 4096)
+	for {
+		// Read from network
+		read, err := cs.pan_conn.Read(buffer[STREAM_HDR_SIZE:])
+		if err != nil {
+			return
+		}
+
+		// Pass to Unix domain socket
+		binary.LittleEndian.PutUint32(buffer[0:4], uint32(read))
+		_, err = cs.unix_conn.Write(buffer[:STREAM_HDR_SIZE+read])
+		if err != nil {
+			return
+		}
+	}
+}
+
+func (cs *ConnSSockAdapter) unixToPan() {
+	var buffer = make([]byte, 4096)
+	for {
+		// Read from Unix domain socket
+		read, err := cs.unix_conn.Read(buffer[:STREAM_HDR_SIZE])
+		if err != nil || read < STREAM_HDR_SIZE {
+			return
+		}
+		msglen := uint(binary.LittleEndian.Uint32(buffer[0:4]))
+		if msglen > uint(len(buffer)) {
+			return
+		}
+		read, err = cs.unix_conn.Read(buffer[:msglen])
+		if err != nil {
+			return
+		}
+
+		// Pass to network socket
+		_, err = cs.pan_conn.Write(buffer[:read])
+		if err != nil {
+			return
+		}
+	}
 }
 
 //////////

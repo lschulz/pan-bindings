@@ -21,7 +21,8 @@ typedef struct { const char *p; ptrdiff_t n; } _GoString_;
 
 #line 17 "pan_wrapper.go"
 
- #include "pan_cdefs.h"
+ #include "pan/pan_cdefs.h"
+ #define PAN_STREAM_HDR_SIZE 4
  #define PAN_ADDR_HDR_SIZE 32
  /** \file
 	* PAN C Wrapper
@@ -458,10 +459,10 @@ PanDeleteHandle().
 extern PanError PanConnClose(PanConn conn);
 
 /**
-\brief Open a Unix datagram domain socket at `listen_addr` as proxy for `pan_conn`.
+\brief Open a Unix datagram socket at `listen_addr` as proxy for `pan_conn`.
 
 All packets received by `pan_conn` are forwarded from `listen_addr` to `client_addr`.
-All packets received from the domain socket are forwarded to `pan_conn`.
+All packets received from the Unix socket are forwarded to `pan_conn`.
 The SCION address of the source or destination is prepended to the payload in a
 32 byte header:
 \verbatim
@@ -480,7 +481,7 @@ LE = little-endian
 \endverbatim
 
 \param[in] pan_conn Listening PAN connection.
-\param[in] listen_addr Local address of the domain socket in the file system.
+\param[in] listen_addr Local address of the socket in the file system.
 \param[in] client_addr Address of the other end of the connection in the C part
 	of the program.
 \param[out] adapter Socket adapter object.
@@ -489,13 +490,13 @@ LE = little-endian
 extern PanError PanNewListenSockAdapter(PanListenConn pan_conn, cchar_t* listen_addr, cchar_t* client_addr, PanListenSockAdapter* adapter);
 
 /**
-\brief Close the unix socket **and the PAN connection**.
+\brief Close the Unix domain socket **and the PAN connection**.
 \ingroup adapter
 */
 extern PanError PanListenSockAdapterClose(PanListenSockAdapter adapter);
 
 /**
-\brief Open a Unix datagram domain socket at `listen_addr` as proxy for `pan_conn`.
+\brief Open a Unix datagram socket at `listen_addr` as proxy for `pan_conn`.
 
 All packets received by pan_conn are forwarded from `listen_addr` to `client_addr`.
 All packets received from the unix socket are forwarded to `pan_conn`.
@@ -510,10 +511,68 @@ All packets received from the unix socket are forwarded to `pan_conn`.
 extern PanError PanNewConnSockAdapter(PanConn pan_conn, cchar_t* listen_addr, cchar_t* client_addr, PanConnSockAdapter* adapter);
 
 /**
-\brief Close the unix socket **and the PAN connection**.
+\brief Close the Unix domain socket **and the PAN connection**.
 \ingroup adapter
 */
 extern PanError PanConnSockAdapterClose(PanConnSockAdapter adapter);
+
+/**
+\brief Open a Unix stream socket at `listen_addr` as proxy for `pan_conn`.
+
+Behaves identical to `PanNewListenSockAdapter` except that a stream socket is
+used instead of a datagram socket. Packet borders in the stream are determined
+by prepending a four byte message length (little endian) in front of every
+packet sent or received on the Unix socket.
+
+When initially created, the socket will listens for and accept exactly one
+connection.
+
+The stream variants of the socket adapters are intended for systems lacking
+support for Unix datagram sockets, e.g., Windows. A more native solution on
+Windows might be named pipes, however they have a very different API from
+sockets.
+
+\param[in] pan_conn Listening PAN connection.
+\param[in] listen_addr Local address of the socket in the file system.
+\param[out] adapter Socket adapter object.
+\ingroup adapter
+*/
+extern PanError PanNewListenSSockAdapter(PanListenConn pan_conn, cchar_t* listen_addr, PanListenSSockAdapter* adapter);
+
+/**
+\brief Close the Unix domain socket **and the PAN connection**.
+\ingroup adapter
+*/
+extern PanError PanListenSSockAdapterClose(PanListenSSockAdapter adapter);
+
+/**
+\brief Open a Unix stream socket at `listen_addr` as proxy for `pan_conn`.
+
+Behaves identical to `PanNewConnSockAdapter` except that a stream socket is
+used instead of a datagram socket. Packet borders in the stream are determined
+by prepending a four byte message length (little endian) in front of every
+packet sent or received on the Unix socket.
+
+When initially created, the socket will listens for and accept exactly one
+connection.
+
+The stream variants of the socket adapters are intended for systems lacking
+support for Unix datagram sockets, e.g., Windows. A more native solution on
+Windows might be named pipes, however they have a very different API from
+sockets.
+
+\param[in] pan_conn Connected PAN connection.
+\param[in] listen_addr Local address of the Unix socket in the file system.
+\param[out] adapter Socket adapter object.
+\ingroup adapter
+*/
+extern PanError PanNewConnSSockAdapter(PanConn pan_conn, cchar_t* listen_addr, PanConnSSockAdapter* adapter);
+
+/**
+\brief Close the Unix domain socket **and the PAN connection**.
+\ingroup adapter
+*/
+extern PanError PanConnSSockAdapterClose(PanConnSSockAdapter adapter);
 
 #ifdef __cplusplus
 }

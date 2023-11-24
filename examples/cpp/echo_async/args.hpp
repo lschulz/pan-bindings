@@ -14,27 +14,16 @@
 
 #pragma once
 
-#include "pan/pan.hpp"
-
-#include <mutex>
 #include <string>
-#include <unordered_map>
+#include <vector>
 
 
-/// \brief Reply on the same path the remote end used.
-class DefaultReplySelector : public Pan::ReplySelector
+struct Arguments
 {
-public:
-    DefaultReplySelector() = default;
-
-protected:
-    Pan::Path path(Pan::udp::Endpoint remote) override;
-    void initialize(Pan::udp::Endpoint local) override;
-    void record(Pan::udp::Endpoint remote, Pan::Path path) override;
-    void pathDown(Pan::PathFingerprint pf, Pan::PathInterface pi) override;
-    void close() override;
-
-private:
-    mutable std::mutex mutex;
-    std::unordered_map<std::string, Pan::Path> remotes;
+    std::string localAddr;
+    std::string remoteAddr;
+    std::vector<char> message;
 };
+
+
+bool parseArgs(int argc, char* argv[], Arguments& args);

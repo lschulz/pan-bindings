@@ -17,6 +17,11 @@
 #include <cstdint>
 #include <functional>
 
+#ifdef _WIN32
+#define DLLEXPORT __declspec(dllexport)
+#else
+#define DLLEXPORT
+#endif
 
 namespace Pan {
 
@@ -36,14 +41,16 @@ public:
         : handle(h)
     {}
 
+    DLLEXPORT
     GoHandle(const GoHandle &other);
-    GoHandle(GoHandle &&other)
+    GoHandle(GoHandle &&other) noexcept
     {
         swap(*this, other);
     }
 
+    DLLEXPORT
     GoHandle& operator=(const GoHandle &other);
-    GoHandle& operator=(GoHandle &&other)
+    GoHandle& operator=(GoHandle &&other) noexcept
     {
         swap(*this, other);
         return *this;
@@ -52,6 +59,7 @@ public:
     ~GoHandle() { reset(); }
 
     /// \brief Initialize with a duplicate of the given handle.
+    DLLEXPORT
     static GoHandle Duplicate(std::uintptr_t handle);
 
     /// \brief Duplicate the contained handle.
@@ -108,6 +116,7 @@ public:
     }
 
     /// \brief Delete the owned handle.
+    DLLEXPORT
     void reset();
 
     /// \brief Release ownership of the handle and return it.
@@ -138,7 +147,7 @@ struct hash<Pan::GoHandle>
 {
     size_t operator()(const Pan::GoHandle&handle) const
     {
-        return reinterpret_cast<size_t>(handle.get());
+        return static_cast<size_t>(handle.get());
     }
 };
 }

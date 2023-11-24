@@ -14,22 +14,22 @@
 
 #pragma once
 
-#include "pan/pan.hpp"
+#include <asio.hpp>
+#include <cstdint>
 
 
-/// \brief Path policy that interactively prompts for a path selection.
-class InteractivePolicy : public Pan::PathPolicy
+constexpr size_t STREAM_HEADER_LEN = 4;
+constexpr size_t PROXY_HEADER_LEN = 32;
+constexpr size_t MAX_MSG_LEN = 4096;
+
+struct ScionUDPAddr
 {
-public:
-    InteractivePolicy()
-    { }
-
-protected:
-    virtual void filter(Paths& paths) override;
-
-private:
-    static Pan::PathFingerprint promptForSelection(const Paths& paths);
-
-private:
-    Pan::PathFingerprint selPathFp; // fingerprint of the selected path
+    uint8_t isd[2];
+    uint8_t asn[6];
+    asio::ip::address ip;
+    uint16_t port;
 };
+
+ScionUDPAddr parseProxyHeader(const char* buffer, size_t len);
+
+std::ostream& operator<<(std::ostream& stream, const ScionUDPAddr& addr);

@@ -12,12 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "pan.hpp"
+#include "pan/pan.hpp"
 #include "common/message_parser.hpp"
 #include "policy.hpp"
 #include "reply_selector.hpp"
 #include "selector.hpp"
-#include "ncurses_helper.hpp"
 
 #include <getopt.h>
 
@@ -28,6 +27,39 @@
 #include <cstddef>
 #include <cctype>
 
+#if (defined _WIN32)
+#include <Windows.h>
+
+bool isKeyPressed(HANDLE hConsoleInput, WORD vKey)
+{
+    DWORD eventCount = 0;
+    INPUT_RECORD buffer[8];
+    while (true) {
+        GetNumberOfConsoleInputEvents(hConsoleInput, &eventCount);
+        if (eventCount == 0) break;
+        DWORD recordsRead = 0;
+        ReadConsoleInput(hConsoleInput, buffer, ARRAYSIZE(buffer), &recordsRead);
+        for (DWORD i = 0; i < recordsRead; ++i) {
+            if (buffer[i].EventType == KEY_EVENT) {
+                const auto &keyEvent = buffer[i].Event.KeyEvent;
+                if (keyEvent.bKeyDown && keyEvent.wVirtualKeyCode == vKey)
+                    return true;
+            }
+        }
+    }
+    return false;
+}
+
+#define CON_CURSES(x)
+#define CON_WIN32(x) x
+
+#else
+#include "ncurses_helper.hpp"
+
+#define CON_CURSES(x) x
+#define CON_WIN32(x)
+
+#endif
 
 struct Arguments
 {
@@ -137,20 +169,23 @@ int runServer(Arguments& args)
         args.localAddr.c_str(),
         std::make_unique<DefaultReplySelector>());
 
-    ncurses::initServer();
+    CON_WIN32(HANDLE hConsoleInput = GetStdHandle(STD_INPUT_HANDLE));
+    CON_CURSES(ncurses::initServer());
+
     auto local = conn.getLocalEndpoint();
     std::stringstream stream;
     stream << "Server listening at " << local.toString() << '\n';
     stream << "Press q to quit.\n";
-    ncurses::print(stream.str().c_str());
+    CON_CURSES(ncurses::print(stream.str().c_str()));
 
     std::vector<char> buffer(2028);
     Pan::udp::Endpoint from;
     Pan::Path path;
 
-    while (ncurses::getChar() != 'q')
+    CON_WIN32(while (!isKeyPressed(hConsoleInput, TCHAR('Q'))))
+    CON_CURSES(while (ncurses::getChar() != 'q'))
     {
-        ncurses::refreshScreen();
+        CON_CURSES(ncurses::refreshScreen());
         size_t read = 0;
         conn.setReadDeadline(100ms);
         std::error_code ec;
@@ -164,17 +199,18 @@ int runServer(Arguments& args)
             stream << "Received " << read << " bytes from " << from << ":\n";
             printBuffer(stream, buffer.data(), read) << "\n";
             if (path) stream << "Path: " << path.toString() << '\n';
-            ncurses::print(stream.str().c_str());
+            CON_WIN32(std::cout << stream.str());
+            CON_CURSES(ncurses::print(stream.str().c_str()));
 
             size_t written = 0;
             writeBuffer(conn, from, buffer.data(), read, written);
         }
         else if (ec.value() != (int)Pan::Error::Deadline) {
-            ncurses::endServer();
+            CON_CURSES(ncurses::endServer());
             return EXIT_FAILURE;
         }
     }
-    ncurses::endServer();
+    CON_CURSES(ncurses::endServer());
 
     return EXIT_SUCCESS;
 }

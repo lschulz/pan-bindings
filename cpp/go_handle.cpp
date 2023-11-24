@@ -12,16 +12,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "go_handle.hpp"
-#include "pan.h"
-
+#include "pan/go_handle.hpp"
+#include "pan/pan.h"
 
 namespace Pan {
 
+DLLEXPORT
 GoHandle::GoHandle(const GoHandle &other)
     : handle(PanDuplicateHandle(other.handle))
 {}
 
+DLLEXPORT
 GoHandle& GoHandle::operator=(const GoHandle &other)
 {
     if (other != *this)
@@ -29,11 +30,13 @@ GoHandle& GoHandle::operator=(const GoHandle &other)
     return *this;
 }
 
+DLLEXPORT
 GoHandle GoHandle::Duplicate(std::uintptr_t handle)
 {
     return GoHandle(PanDuplicateHandle(handle));
 }
 
+DLLEXPORT
 void GoHandle::reset()
 {
     if (handle != PAN_INVALID_HANDLE) {
