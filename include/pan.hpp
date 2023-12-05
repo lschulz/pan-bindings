@@ -22,7 +22,7 @@
 #include <string_view>
 #include <system_error>
 
-#include <asio.hpp>
+#include <boost/asio.hpp>
 
 #include "go_handle.hpp"
 
@@ -63,8 +63,7 @@ namespace udp {
 
 class PathInterface final
 {
-public:
-    PathInterface() = default;
+public:    
     explicit PathInterface(GoHandle&& handle)
         : h(std::move(handle))
     {}
@@ -73,7 +72,6 @@ public:
     bool isValid() const noexcept { return h.isValid(); }
     std::uintptr_t getHandle() const noexcept { return h.get(); }
     std::uintptr_t releaseHandle() noexcept { return h.release(); }
-
 private:
     GoHandle h;
 };
@@ -81,7 +79,7 @@ private:
 class PathFingerprint final
 {
 public:
-    PathFingerprint() = default;
+    PathFingerprint();
     explicit PathFingerprint(GoHandle&& handle)
         : h(std::move(handle))
     {}
@@ -205,7 +203,7 @@ private:
 };
 
 namespace udp {
-
+using namespace boost;
 class Endpoint final
 {
 public:
@@ -266,7 +264,7 @@ public:
     void close() noexcept;
 
 private:
-    ListenSockAdapter(GoHandle handle);
+    ListenSockAdapter(GoHandle handle) noexcept;
     friend class ListenConn;
 
 private:
@@ -318,7 +316,7 @@ public:
     std::size_t writeToVia(asio::const_buffer buffer, const Endpoint& to, const Path& path, std::error_code& ec) noexcept;
 
     ListenSockAdapter createSockAdapter(const char* goSocketPath, const char* cSocketPath);
-    ListenSockAdapter createSockAdapter(const char* goSocketPath, const char* cSocketPath, std::error_code &ec);
+    ListenSockAdapter createSockAdapter(const char* goSocketPath, const char* cSocketPath, std::error_code &ec) noexcept;
 
 private:
     GoHandle h;
@@ -349,7 +347,7 @@ public:
     void close() noexcept;
 
 private:
-    ConnSockAdapter(GoHandle handle);
+    ConnSockAdapter(GoHandle handle) noexcept;
     friend class Conn;
 
 private:

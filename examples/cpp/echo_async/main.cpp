@@ -15,7 +15,7 @@
 #include "pan.hpp"
 #include "common/message_parser.hpp"
 
-#include <asio.hpp>
+#include <boost/asio.hpp>
 #include <getopt.h>
 
 #include <array>
@@ -26,6 +26,7 @@
 #include <cstddef>
 #include <cctype>
 
+using namespace boost;
 
 static const size_t PROXY_HEADER_LEN = 32;
 
@@ -179,7 +180,7 @@ public:
     }
 
 private:
-    void connected(const asio::error_code& error)
+    void connected(const system::error_code& error)
     {
         using namespace std::placeholders;
 
@@ -194,7 +195,7 @@ private:
         socket.async_receive(asio::buffer(buffer), std::bind(&Server::received, this, _1, _2));
     }
 
-    void received(const asio::error_code& error, size_t bytes)
+    void received(const system::error_code& error, size_t bytes)
     {
         using namespace std::placeholders;
 
@@ -220,7 +221,7 @@ private:
         }
     }
 
-    void sent(const asio::error_code& error, size_t bytes)
+    void sent(const system::error_code& error, size_t bytes)
     {
         using namespace std::placeholders;
 
@@ -234,7 +235,7 @@ private:
         socket.async_receive(asio::buffer(buffer), std::bind(&Server::received, this, _1, _2));
     }
 
-    void cancel(const asio::error_code& error, int signal)
+    void cancel(const system::error_code& error, int signal)
     {
         if (error) {
             std::cerr << "ASIO error: " << error.message() << std::endl;
@@ -297,7 +298,7 @@ public:
     }
 
 private:
-    void connected(const asio::error_code& error)
+    void connected(const system::error_code& error)
     {
         using namespace std::placeholders;
 
@@ -309,7 +310,7 @@ private:
         socket.async_send(asio::buffer(buffer), std::bind(&Client::sent, this, _1, _2));
     }
 
-    void sent(const asio::error_code& error, size_t bytes)
+    void sent(const system::error_code& error, size_t bytes)
     {
         using namespace std::placeholders;
 
@@ -323,7 +324,7 @@ private:
         socket.async_receive(asio::buffer(buffer), std::bind(&Client::received, this, _1, _2));
     }
 
-    void received(const asio::error_code& error, size_t bytes)
+    void received(const system::error_code& error, size_t bytes)
     {
         if (error) {
             std::cerr << "ASIO error: " << error.message() << std::endl;

@@ -260,6 +260,32 @@ extern PanError PanListenUDP(cchar_t* listen, PanReplySelector selector, PanList
 extern PanError PanListenConnReadFrom(PanListenConn conn, void* buffer, int len, PanUDPAddr* from, int* n);
 
 /**
+\brief Wrapper for `(pan.ListenConn).ReadFrom`
+\attention experimental non-blocking Read feature
+	it is intended to replace the ListenSockAdapter workaround (unix-domain sockets)
+\param[in] conn Listening connection.
+\param[in] buffer Pointer to a buffer that will receive the packet.
+\param[in] len Size of \p buffer in bytes.
+\param[out] from Host from which data was received. Can be NULL to ignore.
+\param[out] n Number of bytes read. Can be NULL to ignore.
+\return `PAN_ERR_OK` on success.
+	`PAN_ERR_DEADLINE` if the deadline was exceeded.
+	`PAN_ERR_WOULDBLOCK' if no data is yet available
+	`PAN_ERR_FAILED` if the operation failed.
+\ingroup listen_conn
+\details this method initiates a read operation and returns imediately.
+	If data was available to read, it is copied to the out-parameters 
+	which is indicated with return code success.
+	If no data is available, a suspended goroutine is launched instead,
+	which waits for data to become ready on the socket.
+	Once the goroutine is resumed, either because of timeout or arrival of new data,
+	the provided waker is invoked with a return-code that indicated what happened.
+	If the waker is invoked with ERR_Ok it is guaranteed, that the data has been 
+	copied to the provided outparameters.
+*/
+extern PanError PanListenConnReadFromAsync(PanListenConn conn, void* buffer, int len, PanUDPAddr* from, int* n, int timeout_duration, OnCompletionWaker waker);
+
+/**
 \brief Wrapper for `(pan.ListenConn).ReadFromVia`
 \param[in] conn Listening connection.
 \param[in] buffer Pointer to a buffer that will receive the packet.
