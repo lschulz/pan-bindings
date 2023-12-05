@@ -1,0 +1,13 @@
+[package]
+    name = "pan_bindings"
+    version = "1.0.0"
+
+
+
+[build-dependencies]
+bindgen = "0.65.1"
+tokio = { version = "1.0", features = ["full"] }
+
+[dependencies]
+tokio = { version = "1.0", features = ["full"] }
+bindgen = "0.65.1"

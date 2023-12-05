@@ -23,11 +23,13 @@
 
 #define PAN_INVALID_HANDLE 0
 #define PAN_ERR_OK 0
+#define PAN_ERR_WOULDBLOCK 6
 #define PAN_ERR_FAILED 1
 #define PAN_ERR_DEADLINE 2
 #define PAN_ERR_NO_PATH 3
 #define PAN_ERR_ADDR_SYNTAX 4
 #define PAN_ERR_ADDR_RESOLUTION 5
+
 
 typedef const void cvoid_t;
 typedef const char cchar_t;
@@ -47,6 +49,16 @@ typedef uintptr_t PanConnSockAdapter;
 typedef uintptr_t PanConnSSockAdapter;
 typedef uintptr_t PanListenSockAdapter;
 typedef uintptr_t PanListenSSockAdapter;
+
+/////////////////
+// Async Read/Write
+////////////////
+typedef void (*OnCompletionWaker)( PanError );
+
+inline void InvokeCompletionWaker( OnCompletionWaker waker , PanError completion_code)
+{
+	waker(completion_code);
+}
 
 ////////////
 // Policy //

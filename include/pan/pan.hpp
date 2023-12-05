@@ -22,7 +22,7 @@
 #include <string_view>
 #include <system_error>
 
-#include <asio.hpp>
+#include <boost/asio.hpp>
 
 #include "go_handle.hpp"
 
@@ -81,8 +81,7 @@ namespace udp {
 
 class PathInterface final
 {
-public:
-    PathInterface() = default;
+public:    
     explicit PathInterface(GoHandle&& handle)
         : h(std::move(handle))
     {}
@@ -91,7 +90,6 @@ public:
     bool isValid() const noexcept { return h.isValid(); }
     std::uintptr_t getHandle() const noexcept { return h.get(); }
     std::uintptr_t releaseHandle() noexcept { return h.release(); }
-
 private:
     GoHandle h;
 };
@@ -99,7 +97,7 @@ private:
 class PathFingerprint final
 {
 public:
-    PathFingerprint() = default;
+    PathFingerprint();
     explicit PathFingerprint(GoHandle&& handle)
         : h(std::move(handle))
     {}
@@ -231,7 +229,7 @@ private:
 };
 
 namespace udp {
-
+using namespace boost;
 class Endpoint final
 {
 public:
@@ -301,8 +299,7 @@ public:
     void close() noexcept;
 
 private:
-    DLLEXPORT
-    ListenSockAdapter(GoHandle handle);
+    ListenSockAdapter(GoHandle handle) noexcept;
     friend class ListenConn;
 
 private:
@@ -410,15 +407,7 @@ public:
 #ifdef UNIX_DGRAM_AVAILABLE
     DLLEXPORT
     ListenSockAdapter createSockAdapter(const char* goSocketPath, const char* cSocketPath);
-    DLLEXPORT
     ListenSockAdapter createSockAdapter(const char* goSocketPath, const char* cSocketPath, std::error_code &ec) noexcept;
-#endif
-#ifdef UNIX_STREAM_AVAILABLE
-    DLLEXPORT
-    ListenSSockAdapter createSSockAdapter(const char* goSocketPath);
-    DLLEXPORT
-    ListenSSockAdapter createSSockAdapter(const char* goSocketPath, std::error_code &ec) noexcept;
-#endif
 
 private:
     GoHandle h;

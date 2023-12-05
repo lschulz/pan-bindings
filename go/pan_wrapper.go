@@ -42,6 +42,7 @@ import (
 	"context"
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"net"
 	"os"
 	"runtime/cgo"
@@ -553,6 +554,109 @@ func PanListenConnReadFrom(
 	}
 	if n != nil {
 		*(*C.int)(unsafe.Pointer(n)) = C.int(read)
+	}
+
+	return C.PAN_ERR_OK
+}
+
+/**
+\brief Wrapper for `(pan.ListenConn).ReadFrom`
+\param[in] conn Listening connection.
+\param[in] buffer Pointer to a buffer that will receive the packet.
+\param[in] len Size of \p buffer in bytes.
+\param[out] from Host from which data was received. Can be NULL to ignore.
+\param[out] n Number of bytes read. Can be NULL to ignore.
+\return `PAN_ERR_OK` on success.
+	`PAN_ERR_DEADLINE` if the deadline was exceeded.
+	`PAN_ERR_FAILED` if the operation failed.
+\ingroup listen_conn
+*/
+//export PanListenConnReadFromAsync
+func PanListenConnReadFromAsync(conn C.PanListenConn, buffer *C.void, len C.int, from *C.PanUDPAddr, n *C.int, timeout_duration C.int, waker C.OnCompletionWaker) C.PanError {
+	c := cgo.Handle(conn).Value().(pan.ListenConn)
+	p := unsafe.Slice((*byte)(unsafe.Pointer(buffer)), len)
+
+	// Set read deadline to zero for non-blocking read
+	if err := c.SetReadDeadline(time.Now()); err != nil {
+		fmt.Println("Error setting read deadline:", err)
+		return C.PAN_ERR_FAILED
+	}
+
+	// Try to read
+	read, add, err := c.ReadFrom(p)
+
+	if err != nil {
+		if err, ok := err.(net.Error); ok && err.Timeout() {
+			// Read would block in non-blocking mode
+			fmt.Println("Read would block (timeout)")
+
+			////////////////////////////////////////////
+
+			// Launch a goroutine for non-blocking read
+			go func() {
+				buffer_out := p
+				conn := c
+				from_out := from
+				bytes_read_out := n
+
+				if err := conn.SetReadDeadline(time.Now().Add(time.Duration(timeout_duration) * time.Millisecond)); err != nil {
+					fmt.Println("Error setting read deadline:", err)
+					// call waker with C.PAN_ERR_FAILED
+					C.InvokeCompletionWaker(waker, C.PAN_ERR_FAILED)
+				}
+
+				nn, addr, err := conn.ReadFrom(buffer_out)
+				if err == nil {
+					// Data is available, signal the main caller
+
+					if addr != nil {
+						*(*C.PanUDPAddr)(unsafe.Pointer(from_out)) = C.PanUDPAddr(cgo.NewHandle(addr))
+					}
+					if bytes_read_out != nil {
+						*(*C.int)(unsafe.Pointer(bytes_read_out)) = C.int(nn)
+					}
+
+					//  call waker with C.PAN_ERR_OK here
+					// notify the rust future, that the result is now available
+					C.InvokeCompletionWaker(waker, C.PAN_ERR_OK)
+
+				} else {
+					fmt.Println("Error reading:", err)
+
+					if err, ok := err.(net.Error); ok && err.Timeout() {
+						// call waker with C.PAN_ERR_DEADLINE here  -> the callback on the rust side must transition the state according to ret-code
+						// and eventuall reschedule the rust future to be polled again
+						C.InvokeCompletionWaker(waker, C.PAN_ERR_DEADLINE)
+					}
+
+					// check if error is timeout and return the right error code
+					// call waker with C.PAN_ERR_FAILED here
+					C.InvokeCompletionWaker(waker, C.PAN_ERR_FAILED)
+				}
+			}()
+
+			////////////////////////////////////////////
+
+			// return Pending
+
+		} else {
+			fmt.Println("Error reading:", err)
+			// return error  other than timeout
+			return C.PAN_ERR_FAILED
+		}
+	} else {
+		// Read successful
+		fmt.Printf("Read %d bytes: %s\n", n, buffer[:read])
+
+		if add != nil {
+			*(*C.PanUDPAddr)(unsafe.Pointer(from)) = C.PanUDPAddr(cgo.NewHandle(add))
+		}
+		if n != nil {
+			*(*C.int)(unsafe.Pointer(n)) = C.int(read)
+		}
+
+		return C.PAN_ERR_OK
+
 	}
 
 	return C.PAN_ERR_OK
