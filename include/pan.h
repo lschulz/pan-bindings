@@ -21,7 +21,7 @@ typedef struct { const char *p; ptrdiff_t n; } _GoString_;
 
 #line 17 "pan_wrapper.go"
 
- #include "pan_cdefs.h"
+ #include "../include/pan_cdefs.h"
  #define PAN_ADDR_HDR_SIZE 32
  /** \file
 	* PAN C Wrapper
@@ -283,7 +283,8 @@ extern PanError PanListenConnReadFrom(PanListenConn conn, void* buffer, int len,
 	If the waker is invoked with ERR_Ok it is guaranteed, that the data has been 
 	copied to the provided outparameters.
 */
-extern PanError PanListenConnReadFromAsync(PanListenConn conn, void* buffer, int len, PanUDPAddr* from, int* n, int timeout_duration, OnCompletionWaker waker);
+extern PanError PanListenConnReadFromAsync(PanListenConn conn, void* buffer, int len, PanUDPAddr* from, int* n, int timeout_duration, OnCompletionWaker waker, void* arc_conn);
+extern PanError PanListenConnReadFromAsyncVia(PanListenConn conn, void* buffer, int len, PanUDPAddr* from, PanPath* path, int* n, int timeout_duration, OnCompletionWaker waker, void* arc_conn);
 
 /**
 \brief Wrapper for `(pan.ListenConn).ReadFromVia`

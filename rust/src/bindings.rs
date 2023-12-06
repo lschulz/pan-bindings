@@ -8,16 +8,14 @@ pub struct __BindgenComplex<T> {
 }
 pub const _GLIBCXX_CSTDINT: u32 = 1;
 pub const _GLIBCXX_CXX_CONFIG_H: u32 = 1;
-pub const _GLIBCXX_RELEASE: u32 = 13;
-pub const __GLIBCXX__: u32 = 20230913;
+pub const _GLIBCXX_RELEASE: u32 = 11;
+pub const __GLIBCXX__: u32 = 20230528;
 pub const _GLIBCXX_HAVE_ATTRIBUTE_VISIBILITY: u32 = 1;
 pub const _GLIBCXX_USE_DEPRECATED: u32 = 1;
 pub const _GLIBCXX_EXTERN_TEMPLATE: u32 = 1;
 pub const _GLIBCXX_USE_DUAL_ABI: u32 = 1;
 pub const _GLIBCXX_USE_CXX11_ABI: u32 = 1;
 pub const _GLIBCXX_INLINE_VERSION: u32 = 0;
-pub const _GLIBCXX_HAVE_IS_CONSTANT_EVALUATED: u32 = 1;
-pub const _GLIBCXX_VERBOSE_ASSERT: u32 = 1;
 pub const _GLIBCXX_USE_ALLOCATOR_NEW: u32 = 1;
 pub const _GLIBCXX_OS_DEFINES: u32 = 1;
 pub const __NO_CTYPE: u32 = 1;
@@ -64,7 +62,6 @@ pub const __USE_GNU: u32 = 1;
 pub const __USE_FORTIFY_LEVEL: u32 = 0;
 pub const __GLIBC_USE_DEPRECATED_GETS: u32 = 1;
 pub const __GLIBC_USE_DEPRECATED_SCANF: u32 = 0;
-pub const __GLIBC_USE_C2X_STRTOL: u32 = 1;
 pub const _STDC_PREDEF_H: u32 = 1;
 pub const __STDC_IEC_559__: u32 = 1;
 pub const __STDC_IEC_60559_BFP__: u32 = 201404;
@@ -73,12 +70,11 @@ pub const __STDC_IEC_60559_COMPLEX__: u32 = 201404;
 pub const __STDC_ISO_10646__: u32 = 201706;
 pub const __GNU_LIBRARY__: u32 = 6;
 pub const __GLIBC__: u32 = 2;
-pub const __GLIBC_MINOR__: u32 = 38;
+pub const __GLIBC_MINOR__: u32 = 35;
 pub const _SYS_CDEFS_H: u32 = 1;
 pub const __glibc_c99_flexarr_available: u32 = 1;
 pub const __LDOUBLE_REDIRECTS_TO_FLOAT128_ABI: u32 = 0;
 pub const __HAVE_GENERIC_SELECTION: u32 = 0;
-pub const _GLIBCXX_HAVE_FLOAT128_MATH: u32 = 1;
 pub const _GLIBCXX_GTHREAD_USE_WEAK: u32 = 0;
 pub const _GLIBCXX_CPU_DEFINES: u32 = 1;
 pub const _GLIBCXX_FAST_MATH: u32 = 0;
@@ -87,12 +83,12 @@ pub const _GLIBCXX_FLOAT_IS_IEEE_BINARY32: u32 = 1;
 pub const _GLIBCXX_DOUBLE_IS_IEEE_BINARY64: u32 = 1;
 pub const _GLIBCXX_HAVE_BUILTIN_HAS_UNIQ_OBJ_REP: u32 = 1;
 pub const _GLIBCXX_HAVE_BUILTIN_IS_AGGREGATE: u32 = 1;
+pub const _GLIBCXX_HAVE_BUILTIN_IS_CONSTANT_EVALUATED: u32 = 1;
 pub const _GLIBCXX_HAVE_BUILTIN_IS_SAME: u32 = 1;
 pub const _GLIBCXX_HAVE_BUILTIN_LAUNDER: u32 = 1;
 pub const _GLIBCXX_HAVE_ACOSF: u32 = 1;
 pub const _GLIBCXX_HAVE_ACOSL: u32 = 1;
 pub const _GLIBCXX_HAVE_ALIGNED_ALLOC: u32 = 1;
-pub const _GLIBCXX_HAVE_ARC4RANDOM: u32 = 1;
 pub const _GLIBCXX_HAVE_ARPA_INET_H: u32 = 1;
 pub const _GLIBCXX_HAVE_ASINF: u32 = 1;
 pub const _GLIBCXX_HAVE_ASINL: u32 = 1;
@@ -110,9 +106,7 @@ pub const _GLIBCXX_HAVE_COSF: u32 = 1;
 pub const _GLIBCXX_HAVE_COSHF: u32 = 1;
 pub const _GLIBCXX_HAVE_COSHL: u32 = 1;
 pub const _GLIBCXX_HAVE_COSL: u32 = 1;
-pub const _GLIBCXX_HAVE_DECL_STRNLEN: u32 = 1;
 pub const _GLIBCXX_HAVE_DIRENT_H: u32 = 1;
-pub const _GLIBCXX_HAVE_DIRFD: u32 = 1;
 pub const _GLIBCXX_HAVE_DLFCN_H: u32 = 1;
 pub const _GLIBCXX_HAVE_ENDIAN_H: u32 = 1;
 pub const _GLIBCXX_HAVE_EXCEPTION_PTR_SINCE_GCC46: u32 = 1;
@@ -122,7 +116,6 @@ pub const _GLIBCXX_HAVE_EXPL: u32 = 1;
 pub const _GLIBCXX_HAVE_FABSF: u32 = 1;
 pub const _GLIBCXX_HAVE_FABSL: u32 = 1;
 pub const _GLIBCXX_HAVE_FCNTL_H: u32 = 1;
-pub const _GLIBCXX_HAVE_FDOPENDIR: u32 = 1;
 pub const _GLIBCXX_HAVE_FENV_H: u32 = 1;
 pub const _GLIBCXX_HAVE_FINITE: u32 = 1;
 pub const _GLIBCXX_HAVE_FINITEF: u32 = 1;
@@ -134,13 +127,14 @@ pub const _GLIBCXX_HAVE_FMODF: u32 = 1;
 pub const _GLIBCXX_HAVE_FMODL: u32 = 1;
 pub const _GLIBCXX_HAVE_FREXPF: u32 = 1;
 pub const _GLIBCXX_HAVE_FREXPL: u32 = 1;
-pub const _GLIBCXX_HAVE_GETENTROPY: u32 = 1;
 pub const _GLIBCXX_HAVE_GETIPINFO: u32 = 1;
 pub const _GLIBCXX_HAVE_GETS: u32 = 1;
 pub const _GLIBCXX_HAVE_HYPOT: u32 = 1;
 pub const _GLIBCXX_HAVE_HYPOTF: u32 = 1;
 pub const _GLIBCXX_HAVE_HYPOTL: u32 = 1;
 pub const _GLIBCXX_HAVE_ICONV: u32 = 1;
+pub const _GLIBCXX_HAVE_INT64_T: u32 = 1;
+pub const _GLIBCXX_HAVE_INT64_T_LONG: u32 = 1;
 pub const _GLIBCXX_HAVE_INTTYPES_H: u32 = 1;
 pub const _GLIBCXX_HAVE_ISINFF: u32 = 1;
 pub const _GLIBCXX_HAVE_ISINFL: u32 = 1;
@@ -157,7 +151,6 @@ pub const _GLIBCXX_HAVE_LIMIT_FSIZE: u32 = 1;
 pub const _GLIBCXX_HAVE_LIMIT_RSS: u32 = 1;
 pub const _GLIBCXX_HAVE_LIMIT_VMEM: u32 = 0;
 pub const _GLIBCXX_HAVE_LINK: u32 = 1;
-pub const _GLIBCXX_HAVE_LINK_H: u32 = 1;
 pub const _GLIBCXX_HAVE_LINUX_FUTEX: u32 = 1;
 pub const _GLIBCXX_HAVE_LINUX_RANDOM_H: u32 = 1;
 pub const _GLIBCXX_HAVE_LINUX_TYPES_H: u32 = 1;
@@ -175,7 +168,6 @@ pub const _GLIBCXX_HAVE_MODFL: u32 = 1;
 pub const _GLIBCXX_HAVE_NETDB_H: u32 = 1;
 pub const _GLIBCXX_HAVE_NETINET_IN_H: u32 = 1;
 pub const _GLIBCXX_HAVE_NETINET_TCP_H: u32 = 1;
-pub const _GLIBCXX_HAVE_OPENAT: u32 = 1;
 pub const _GLIBCXX_HAVE_POLL: u32 = 1;
 pub const _GLIBCXX_HAVE_POLL_H: u32 = 1;
 pub const _GLIBCXX_HAVE_POSIX_MEMALIGN: u32 = 1;
@@ -234,7 +226,6 @@ pub const _GLIBCXX_HAVE_TLS: u32 = 1;
 pub const _GLIBCXX_HAVE_TRUNCATE: u32 = 1;
 pub const _GLIBCXX_HAVE_UCHAR_H: u32 = 1;
 pub const _GLIBCXX_HAVE_UNISTD_H: u32 = 1;
-pub const _GLIBCXX_HAVE_UNLINKAT: u32 = 1;
 pub const _GLIBCXX_HAVE_USELOCALE: u32 = 1;
 pub const _GLIBCXX_HAVE_UTIME_H: u32 = 1;
 pub const _GLIBCXX_HAVE_VFWSCANF: u32 = 1;
@@ -265,11 +256,10 @@ pub const _GLIBCXX98_USE_C99_STDIO: u32 = 1;
 pub const _GLIBCXX98_USE_C99_STDLIB: u32 = 1;
 pub const _GLIBCXX98_USE_C99_WCHAR: u32 = 1;
 pub const _GLIBCXX_ATOMIC_BUILTINS: u32 = 1;
-pub const _GLIBCXX_CAN_ALIGNAS_DESTRUCTIVE_SIZE: u32 = 1;
 pub const _GLIBCXX_FULLY_DYNAMIC_STRING: u32 = 0;
 pub const _GLIBCXX_HAS_GTHREADS: u32 = 1;
+pub const _GLIBCXX_HOSTED: u32 = 1;
 pub const _GLIBCXX_RES_LIMITS: u32 = 1;
-pub const _GLIBCXX_STATIC_TZDATA: u32 = 1;
 pub const _GLIBCXX_STDIO_EOF: i32 = -1;
 pub const _GLIBCXX_STDIO_SEEK_CUR: u32 = 1;
 pub const _GLIBCXX_STDIO_SEEK_END: u32 = 2;
@@ -290,10 +280,9 @@ pub const _GLIBCXX_USE_DECIMAL_FLOAT: u32 = 1;
 pub const _GLIBCXX_USE_DEV_RANDOM: u32 = 1;
 pub const _GLIBCXX_USE_FCHMOD: u32 = 1;
 pub const _GLIBCXX_USE_FCHMODAT: u32 = 1;
-pub const _GLIBCXX_USE_FSEEKO_FTELLO: u32 = 1;
 pub const _GLIBCXX_USE_GETTIMEOFDAY: u32 = 1;
 pub const _GLIBCXX_USE_GET_NPROCS: u32 = 1;
-pub const _GLIBCXX_USE_INIT_PRIORITY_ATTRIBUTE: u32 = 1;
+pub const _GLIBCXX_USE_INT128: u32 = 1;
 pub const _GLIBCXX_USE_LFS: u32 = 1;
 pub const _GLIBCXX_USE_LONG_LONG: u32 = 1;
 pub const _GLIBCXX_USE_LSTAT: u32 = 1;
@@ -310,15 +299,12 @@ pub const _GLIBCXX_USE_SC_NPROCESSORS_ONLN: u32 = 1;
 pub const _GLIBCXX_USE_SENDFILE: u32 = 1;
 pub const _GLIBCXX_USE_ST_MTIM: u32 = 1;
 pub const _GLIBCXX_USE_TMPNAM: u32 = 1;
-pub const _GLIBCXX_USE_UCHAR_C8RTOMB_MBRTOC8_CXX20: u32 = 1;
-pub const _GLIBCXX_USE_UCHAR_C8RTOMB_MBRTOC8_FCHAR8_T: u32 = 1;
 pub const _GLIBCXX_USE_UTIME: u32 = 1;
 pub const _GLIBCXX_USE_UTIMENSAT: u32 = 1;
 pub const _GLIBCXX_USE_WCHAR_T: u32 = 1;
 pub const _GLIBCXX_VERBOSE: u32 = 1;
 pub const _GLIBCXX_X86_RDRAND: u32 = 1;
 pub const _GLIBCXX_X86_RDSEED: u32 = 1;
-pub const _GLIBCXX_ZONEINFO_DIR: &[u8; 20usize] = b"/usr/share/zoneinfo\0";
 pub const _GTHREAD_USE_MUTEX_TIMEDLOCK: u32 = 1;
 pub const _STDINT_H: u32 = 1;
 pub const __GLIBC_USE_LIB_EXT2: u32 = 1;
@@ -412,12 +398,12 @@ pub const WCHAR_WIDTH: u32 = 32;
 pub const WINT_WIDTH: u32 = 32;
 pub const PAN_INVALID_HANDLE: u32 = 0;
 pub const PAN_ERR_OK: u32 = 0;
-pub const PAN_ERR_WOULDBLOCK: u32 = 6;
 pub const PAN_ERR_FAILED: u32 = 1;
 pub const PAN_ERR_DEADLINE: u32 = 2;
 pub const PAN_ERR_NO_PATH: u32 = 3;
 pub const PAN_ERR_ADDR_SYNTAX: u32 = 4;
 pub const PAN_ERR_ADDR_RESOLUTION: u32 = 5;
+pub const PAN_ERR_WOULDBLOCK: u32 = 6;
 pub const PAN_ADDR_HDR_SIZE: u32 = 32;
 pub type std_nullptr_t = *const ::std::os::raw::c_void;
 pub type __u_char = ::std::os::raw::c_uchar;
@@ -760,7 +746,8 @@ pub type PanSelector = usize;
 pub type PanReplySelector = usize;
 pub type PanConnSockAdapter = usize;
 pub type PanListenSockAdapter = usize;
-pub type OnCompletionWaker = ::std::option::Option<unsafe extern "C" fn(arg1: PanError)>;
+pub type OnCompletionWaker =
+    ::std::option::Option<unsafe extern "C" fn(arg1: *mut ::std::os::raw::c_void, arg2: PanError)>;
 pub type PanPolicyFilterFn = ::std::option::Option<
     unsafe extern "C" fn(paths: *mut PanPath, count: usize, user: usize) -> PanPath,
 >;
@@ -1211,6 +1198,20 @@ extern "C" {
         n: *mut ::std::os::raw::c_int,
         timeout_duration: ::std::os::raw::c_int,
         waker: OnCompletionWaker,
+        arc_conn: *mut ::std::os::raw::c_void,
+    ) -> PanError;
+}
+extern "C" {
+    pub fn PanListenConnReadFromAsyncVia(
+        conn: PanListenConn,
+        buffer: *mut ::std::os::raw::c_void,
+        len: ::std::os::raw::c_int,
+        from: *mut PanUDPAddr,
+        path: *mut PanPath,
+        n: *mut ::std::os::raw::c_int,
+        timeout_duration: ::std::os::raw::c_int,
+        waker: OnCompletionWaker,
+        arc_conn: *mut ::std::os::raw::c_void,
     ) -> PanError;
 }
 extern "C" {

@@ -78,7 +78,7 @@ println!("libdir_path: {}",libdir_path.display() );
       //  println!("cargo:rustc-link-search=../build/go");
 
         println!("cargo:rustc-link-lib=static:+bundle=go_handle");
-        println!("cargo:rustc-link-lib=static:+bundle=pand");
+        println!("cargo:rustc-link-lib=static:+bundle=pan");
         println!("cargo:rustc-link-lib=stdc++");
 
 
@@ -87,6 +87,8 @@ println!("libdir_path: {}",libdir_path.display() );
 
         // Tell cargo to invalidate the built crate whenever the header changes.
         println!("cargo:rerun-if-changed={}", headers_path_str);
+        println!("cargo:rerun-if-changed=../build" );
+        
 
 
     // The bindgen::Builder is the main entry point

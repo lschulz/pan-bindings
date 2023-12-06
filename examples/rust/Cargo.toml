@@ -1,21 +1,30 @@
 [package]
     name = "pan_bindings_example"
     version = "1.0.0"
+    edition = "2021"
 
 [[bin]]
-name = "main"
+name = "echo"
 path = "src/main.rs"
+
+[[bin]]
+name = "async_echo"
+path = "src/async_echo.rs"
 
 
 
 [build-dependencies]
 pan_bindings  = { path= "../../rust" }
-bindgen = "0.65.1"
+#bindgen = "0.65.1"
 tokio = { version = "1.0", features = ["full"] }
 clap = { version = "4.0", features = ["derive"] }
+simplelog = "^0.12.0"
+log = "0.4.20"
 
 [dependencies]
 clap = { version = "4.0", features = ["derive"] }
 pan_bindings  = { path= "../../rust" }
 tokio = { version = "1.0", features = ["full"] }
-bindgen = "0.65.1"
+#bindgen = "0.65.1"
+simplelog = "^0.12.0"
+log = "0.4.20"

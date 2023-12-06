@@ -17,10 +17,10 @@ set(SHARED_LIBRARY ${OUTPUT_NAME}.so)
 
 add_custom_target(pan ALL DEPENDS ${STATIC_LIBRARY} ${INCLUDE_HEADER})
 add_custom_command(
-    OUTPUT ${STATIC_LIBRARY}
+    OUTPUT ${STATIC_LIBRARY} ${CGO_HEADER_OUT}
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
     COMMAND ${GO_BINARY} build -buildmode=c-archive -o "${CMAKE_CURRENT_BINARY_DIR}/${STATIC_LIBRARY}" ${SRC}
-    DEPENDS ${SRC}
+    DEPENDS ${SRC} ${CMAKE_SOURCE_DIR}/include/pan_cdefs.h
 )
 add_custom_command(
     OUTPUT ${INCLUDE_HEADER}
