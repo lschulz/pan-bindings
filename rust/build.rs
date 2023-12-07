@@ -20,7 +20,7 @@ fn main() {
 println!("libdir_path: {}",libdir_path.display() );
     // This is the path to the `c` headers file.
     let headers_path =  libdir_path.join("hello.h");
-    let headers_path_str = "../include/go_handle.hpp"; // headers_path.to_str().expect("Path is not a valid string");
+    let headers_path_str = "../include/pan/go_handle.hpp"; // headers_path.to_str().expect("Path is not a valid string");
 
     // This is the path to the intermediate object file for our library.
     let obj_path = libdir_path.join("go_handle.o");
@@ -78,7 +78,7 @@ println!("libdir_path: {}",libdir_path.display() );
       //  println!("cargo:rustc-link-search=../build/go");
 
         println!("cargo:rustc-link-lib=static:+bundle=go_handle");
-        println!("cargo:rustc-link-lib=static:+bundle=pand");
+        println!("cargo:rustc-link-lib=static:+bundle=pan");
         println!("cargo:rustc-link-lib=stdc++");
 
 
@@ -87,6 +87,8 @@ println!("libdir_path: {}",libdir_path.display() );
 
         // Tell cargo to invalidate the built crate whenever the header changes.
         println!("cargo:rerun-if-changed={}", headers_path_str);
+        println!("cargo:rerun-if-changed=../build" );
+        
 
 
     // The bindgen::Builder is the main entry point
@@ -95,13 +97,15 @@ println!("libdir_path: {}",libdir_path.display() );
     let bindings = bindgen::Builder::default()
         // The input header we would like to generate
         // bindings for.
-        .header(headers_path_str)
-        .header("../include/pan_cdefs.h")
-        .header("../include/pan.h")
+        .clang_arg("-DBINDGEN")
         .clang_arg("-xc++")
         .clang_arg("-std=c++11")
-       // .clang_arg("-std=c++11")
-       //.clang_arg("-std=gnu++11")
+        .clang_arg("-I ../include")
+        .clang_arg("-I ../include/pan")
+        .header("../include/pan/pan_cdefs.h")
+        .header("../include/pan/pan.h")
+        .header(headers_path_str)
+     
         
         // Tell cargo to invalidate the built crate whenever any of the
         // included header files changed.

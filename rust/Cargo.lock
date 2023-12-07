@@ -288,6 +288,7 @@ name = "pan_bindings"
 version = "1.0.0"
 dependencies = [
  "bindgen",
+ "log",
  "tokio",
 ]
 

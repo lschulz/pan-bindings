@@ -8,36 +8,6 @@ use std::ops::Deref;
 use std::ptr::null;
 use std::rc::Rc;
 
-trait FnClone: FnOnce(PanError) {
-    fn clone_box(&self) -> Rc<dyn FnClone>;
-}
-
-impl<T> FnClone for T
-where
-    T: 'static + FnOnce(PanError) + Clone,
-{
-    fn clone_box(&self) -> Rc<dyn FnClone> {
-        Rc::new(self.clone())
-    }
-}
-
-// #[derive(Deref)]
-// #[deref(forward)]
-struct myRc(Rc<dyn FnClone>);
-
-impl Clone for myRc {
-    fn clone(&self) -> Self {
-        myRc((**self).clone_box())
-    }
-}
-
-impl Deref for myRc {
-    type Target = <Rc<(dyn FnClone<Output = ()> + 'static)> as Deref>::Target;
-    fn deref(&self) -> &Self::Target {
-        self.0.deref()
-    }
-}
-
 use std::convert::TryInto;
 use std::ffi::CStr;
 use std::fmt;
@@ -45,18 +15,42 @@ use std::future::*;
 use std::io::{self, Bytes};
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::pin::*;
-//use std::rc::Rc;
 use std::str;
 use std::sync::{Arc, Mutex};
 use std::task::{Context, Poll, Waker};
 use std::time::Duration;
 extern crate tokio;
+use log::*;
 use tokio::io::{AsyncRead, AsyncReadExt};
-use tokio::net::{TcpListener, TcpStream};
 
-//use dyn_clone::DynClone;
-//extern crate dyn_clone;
-//use dyn_clone::DynClone;
+//extern crate typenum;
+//use typenum::Same;
+
+// Define a trait for checking type equality
+//trait IsSameType<T: Sized>: Same<T> {}
+
+// Implement the trait for cases where types are the same
+//impl<T: Sized> IsSameType<T> for T {}
+
+trait IsSameType<T> {
+    const IS_SAME_TYPE: bool;
+}
+
+impl IsSameType<ListenConn> for ListenConn {
+    const IS_SAME_TYPE: bool = true;
+}
+
+impl IsSameType<Conn> for ListenConn {
+    const IS_SAME_TYPE: bool = false;
+}
+
+impl IsSameType<ListenConn> for Conn {
+    const IS_SAME_TYPE: bool = false;
+}
+
+impl IsSameType<Conn> for Conn {
+    const IS_SAME_TYPE: bool = true;
+}
 
 //mod bindings;
 //use bindings::*;
@@ -82,6 +76,7 @@ impl Default for Pan_GoHandle {
 
 // impl Error for PanError {}
 
+// todo: make this a proc_macro
 pub trait GoHandleOwner {
     // : Default
     // fn new() -> Self; // better derive Default ?!
@@ -169,7 +164,7 @@ pub struct Path {
 }
 
 impl Path {
-    fn new(handle: Pan_GoHandle) -> Self {
+    pub fn new(handle: Pan_GoHandle) -> Self {
         Self { h: handle }
     }
 
@@ -395,103 +390,110 @@ pub struct ListenConn {
     selector: Option<Box<dyn ReplySelector>>,
 
     read_state: ReadState,
+    write_state: WriteState,
 
-    async_read_timeout: std::os::raw::c_int, // milliseconds
+    async_read_timeout: std::os::raw::c_int,  // milliseconds
+    async_write_timeout: std::os::raw::c_int, // milliseconds
 
     waker: Option<Waker>,
-
-    //  read_complete: Option<Box<dyn FnOnce(PanError)>>,
-    read_complete: Option<Rc<dyn FnClone>>,
+    write_waker: Option<Waker>,
 }
 
-impl Default for ListenConn
-{
+impl Connection for ListenConn {
+    fn get_read_state(&mut self) -> &mut ReadState {
+        &mut self.read_state
+    }
+    fn get_write_state(&mut self) -> &mut WriteState {
+        &mut self.write_state
+    }
+
+    fn get_async_read_timeout(&mut self) -> &mut std::os::raw::c_int {
+        &mut self.async_read_timeout
+    }
+    fn get_async_write_timeout(&mut self) -> &mut std::os::raw::c_int {
+        &mut self.async_write_timeout
+    }
+
+    fn get_waker(&mut self) -> &mut Option<Waker> {
+        &mut self.waker
+    }
+    fn get_write_waker(&mut self) -> &mut Option<Waker> {
+        &mut self.write_waker
+    }
+}
+
+impl Default for ListenConn {
     fn default() -> Self {
-        Self{h: Pan_GoHandle::default(), 
+        Self {
+            h: Pan_GoHandle::default(),
             selector: None,
             waker: None,
+            write_waker: None,
             read_state: ReadState::Initial,
-            async_read_timeout: 100, //ms
-            read_complete: None,
+            write_state: WriteState::Initial,
+            async_read_timeout: 100,  //ms
+            async_write_timeout: 100, //ms
         }
     }
 }
 
-
-enum ReadState {
+enum WriteState {
     Initial,
-    WaitReading {
-        // completion has not yet been called
-        // buffer: Rc< RefCell< Vec<u8>>>,
-        buffer: *mut Vec<u8>,
-        bytes_read: *mut i32,
-        //buffer: Rc<Box<&'a mut [u8]>>,
-        from: *mut PanUDPAddr,
-        //waker: Option<Waker>,
-    },
-    ReadyReading {
-        //buffer: Rc< RefCell<Vec<u8>>>,
-        buffer: *mut Vec<u8>,
-        bytes_read: i32,
-        //buffer: Rc<Box<&'a mut [u8]>>,
-        from: PanUDPAddr,
-        //waker: Option<Waker>,
-    },
     Error(panError),
+    WaitWrite { bytes_written: *mut i32 },
+    ReadyWriting { bytes_written: i32 },
 }
 
-pub struct ReadFuture {
+pub struct WriteFuture<C> {
     // waker: Option<Waker>,
-    // conn: &'a mut ListenConn, // connection from which we read
-    from: PanUDPAddr,
-    bytes: i32,
-    conn: Arc<Mutex<ListenConn>>,
+    bytes_written: Box<i32>, // heap allocate, so that address is pinned
+    conn: Arc<Mutex<C>>, //connection to which we write
 }
 
-impl ReadFuture {
-    // pub fn new(c: &'a mut ListenConn) ->ReadFuture<'a> {
-    pub fn new(c: Arc<Mutex<ListenConn>>) -> ReadFuture {
-        //Self { conn: Arc::new(Mutex::new(c)) , bytes: 0, from: 0}
+impl<C> WriteFuture<C> {
+    pub fn new(c: Arc<Mutex<C>>) -> WriteFuture<C> {
         Self {
             conn: c.clone(),
-            bytes: 0,
-            from: 0,
+            bytes_written: Box::new(0),
         }
     }
 }
 
-impl Future for ReadFuture {
-    //type Output= &'a mut [u8];
-    type Output = Result<(i32, PanUDPAddr), Box<dyn Error>>;
+impl<C> Future for WriteFuture<C>
+where
+    C: Connection,
+{
+    type Output = Result<i32, Box<dyn Error>>;
 
     fn poll(
-        self: Pin<&mut ReadFuture>,
+        self: Pin<&mut WriteFuture<C>>,
         cx: &mut Context<'_>,
-    ) -> Poll<Result<(i32, PanUDPAddr), Box<dyn Error>>> {
-        // check what read state the connection is in
-        // depending on this return Pending or the Ready result
+    ) -> Poll<Result<i32, Box<dyn Error>>> {
+        let mut locked_conn = self.conn.lock().unwrap();
 
-        match self.conn.lock().unwrap().read_state {
-            ReadState::Initial => Poll::Pending,
+        match *locked_conn.get_write_state() {
+            WriteState::Initial => {
+                debug!("future_poll: found initial");
+                Poll::Pending
+            }
 
-            ReadState::Error(err) => Poll::Ready(Err(Box::new(err.clone()))),
+            WriteState::Error(err) => {
+                debug!("future_poll: found error");
+                Poll::Ready(Err(Box::new(err.clone())))
+            }
 
-            ReadState::ReadyReading {
-                buffer: _,
-                from,
-                bytes_read,
-            } => Poll::Ready(Ok((bytes_read, from))),
-            ReadState::WaitReading {
-                buffer: _,
-                from: _,
-                bytes_read: _,
-            } => {
+            WriteState::ReadyWriting { bytes_written } => {
+                debug!("future_poll: found ready_reading");
+                Poll::Ready(Ok(bytes_written))
+            }
+            WriteState::WaitWrite { bytes_written: _ } => {
+                debug!("future_poll: found wait_reading");
                 // store the waker in the listen conn
                 // so the completion can wake us, once the result is available
                 unsafe {
-                    // self.get_unchecked_mut().conn.lock().unwrap().waker = Some(cx.waker().clone());
-                    self.conn.lock().unwrap().waker = Some(cx.waker().clone());
+                    *locked_conn.get_write_waker() = Some(cx.waker().clone());
                 }
+                debug!("future set waker");
 
                 Poll::Pending
             }
@@ -499,164 +501,553 @@ impl Future for ReadFuture {
     }
 }
 
-impl ListenConn {
-    unsafe fn read_completion(_s: Arc<Mutex<ListenConn>>) -> Rc<dyn FnClone> {
-        // let my_closure =
+enum ReadState {
+    Initial,
+    WaitReading {
+        // completion has not yet been called
+        buffer: *mut Vec<u8>,
+        bytes_read: *mut i32,
+        from: *mut PanUDPAddr,
+        path: *mut PanPath,
+        //waker: Option<Waker>,
+    },
+    ReadyReading {
+        buffer: *mut Vec<u8>,
+        bytes_read: i32,
+        from: PanUDPAddr,
+        path: PanPath,
+        //waker: Option<Waker>,
+    },
+    Error(panError),
+}
 
-        Rc::new(move |code: PanError| {
-            // Do something with listen_conn internally
-            //  let  listen_conn = Rc::< RefCell<&mut Self> >::new( RefCell::new(_self) );
-            let mut _self = _s;
+pub struct ReadFuture<C> {
+    // waker: Option<Waker>,
+    from: PanUDPAddr,
+    path: PanPath,
+    bytes: i32,
+    conn: Arc<Mutex<C>>, //connection from which we read
+}
 
-            match code {
-                PAN_ERR_OK => {
-                    /* if let  ReadState::WaitReading {bytes_read:  ref _bytes_read
-                    ,buffer: ref _buffer
-                    ,from:  ref _from }  =  listen_conn.read_state
-                    {
+impl<C> ReadFuture<C> {
+    pub fn new(c: Arc<Mutex<C>>) -> ReadFuture<C> {
+        Self {
+            conn: c.clone(),
+            bytes: 0,
+            from: 0,
+            path: 0,
+        }
+    }
+}
 
-                    listen_conn.read_state = ReadState::ReadyReading { bytes_read: *_bytes_read, buffer: *_buffer, from: *_from };
-                    }
-                    else {} */
+trait Connection: GoHandleOwner {
+    fn get_read_state(&mut self) -> &mut ReadState;
+    fn get_write_state(&mut self) -> &mut WriteState;
 
-                    /*   let ReadState::WaitReading{from: _,bytes_read: br ,buffer:_} =listen_conn.read_state ;
-                    let ReadState::WaitReading{from: _,bytes_read:_,buffer: bu} =listen_conn.read_state;
-                    let ReadState::WaitReading{from: fr,bytes_read:_,buffer:_} =listen_conn.read_state;
+    fn get_async_read_timeout(&mut self) -> &mut std::os::raw::c_int; // milliseconds
+    fn get_async_write_timeout(&mut self) -> &mut std::os::raw::c_int; // milliseconds
 
-                    listen_conn.read_state = ReadState::ReadyReading {
-                         bytes_read: br,
-                         buffer: bu,
-                          from: fr
-                        }; */
+    fn get_waker(&mut self) -> &mut Option<Waker>;
+    fn get_write_waker(&mut self) -> &mut Option<Waker>;
+}
 
-                    let mut state: ReadState = ReadState::Initial;
-                    //match  &listen_conn.borrow_mut().read_state
-                    match &(_self.lock().unwrap()).read_state {
+impl<C> Future for ReadFuture<C>
+where
+    C: Connection,
+{
+    type Output = Result<(i32, PanUDPAddr, PanPath), Box<dyn Error>>;
+
+    fn poll(
+        self: Pin<&mut ReadFuture<C>>,
+        cx: &mut Context<'_>,
+    ) -> Poll<Result<(i32, PanUDPAddr, PanPath), Box<dyn Error>>> {
+        // check what read state the connection is in
+        // depending on this return Pending or the Ready result
+
+        let mut locked_conn = self.conn.lock().unwrap();
+
+        match *locked_conn.get_read_state() {
+            ReadState::Initial => {
+                warn!("read future_poll: found initial");
+                Poll::Pending
+            }
+
+            ReadState::Error(err) => {
+                warn!("read future_poll: found error");
+                *locked_conn.get_read_state() = ReadState::Initial;
+                *locked_conn.get_waker() = None;
+                Poll::Ready(Err(Box::new(err.clone())))
+            }
+
+            ReadState::ReadyReading {
+                buffer: _,
+                from,
+                path,
+                bytes_read,
+            } => {
+                debug!("future_poll: found ready_reading");
+                *locked_conn.get_read_state() = ReadState::Initial; // end this read cycle
+                *locked_conn.get_waker() = None;
+                Poll::Ready(Ok((bytes_read, from, path)))
+            }
+            ReadState::WaitReading {
+                buffer: _,
+                from: _,
+                path: _,
+                bytes_read: _,
+            } => {
+                debug!("future_poll: found wait_reading");
+                // store the waker in the listen conn
+                // so the completion can wake us, once the result is available
+                unsafe {
+                    *locked_conn.get_waker() = Some(cx.waker().clone());
+                }
+                debug!("future set read waker");
+
+                Poll::Pending
+            }
+        }
+    }
+}
+
+unsafe extern "C" fn read_completer<C>(arc: *mut c_void, code: PanError)
+where
+    C: Connection,
+{
+    let mut _self: Arc<Mutex<C>> = Arc::<Mutex<C>>::from_raw(std::mem::transmute(arc));
+    debug!("read handler invoked with code: {}", code);
+    match code {
+        PAN_ERR_OK => {
+            match _self.lock() {
+                Ok(ref mut c) => {
+                    match &mut c.get_read_state() {
                         ReadState::WaitReading {
                             bytes_read: br,
                             buffer: bu,
                             from: fr,
+                            path: p,
                         } => {
-                            // listen_conn.read_state
-                            state = ReadState::ReadyReading {
+                            debug!("read handler found state: wait_reading");
+                            *c.get_read_state() = ReadState::ReadyReading {
                                 bytes_read: **br,
                                 buffer: bu.clone(),
+                                path: **p,
                                 from: **fr,
                             };
                         }
-                        _ => {}
+                        ReadState::Initial => {
+                            debug!("read_handler found unexpected state: Initial");
+                            //  return ; // Dont call the waker
+                            // this happens when the completer gets to lock the listen conn,
+                            // before the main thread could transit the read state to WaitReading
+                            // In this case the future has to be polled again
+                            // this could be avoided if the Go functions were given another callback function pointer
+                            // 'OnSuspend' which would be called, right before the go method returns WOULDBLOCK
+                            // This callback would prepare the listen conn's state for the completion handler to run
+                            // i.e. transit from ReadState::Initial to ReadState::WaitRead
+                        }
+                        ReadState::Error(_) => {
+                            debug!("read_handler found unexpected state: ReadReady");
+                        }
+                        ReadState::ReadyReading { .. } => {
+                            debug!("read_handler found unexpected state: Ready");
+                        }
                     };
-                    //  (&mut *(listen_conn.clone()) ).read_state = state;
-
-                    //* &mut listen_conn.borrow_mut().read_state = state;
-                    (&mut _self.lock().unwrap()).read_state = state;
                 }
-                PAN_ERR_DEADLINE => {
-                    // Ready(Box::new(panError(return_code)))
-                    // listen_conn.borrow_mut().read_state = ReadState::Error(panError(code))
-
-                    (&mut _self.lock().unwrap()).read_state = ReadState::Error(panError(code));
+                Err(_) => {
+                    panic!("read handler cant get lock");
                 }
-                PAN_ERR_FAILED => {
-                    //   Ready(Box::new(panError(return_code)))
-                    //listen_conn.borrow_mut().read_state = ReadState::Error( panError(code));
-                    (&mut _self.lock().unwrap()).read_state = ReadState::Error(panError(code));
-                }
-                _ => {}
             }
+        }
+        PAN_ERR_DEADLINE => {
+            *(&mut _self.lock().unwrap()).get_read_state() = ReadState::Error(panError(code));
+        }
+        PAN_ERR_FAILED => {
+            *(&mut _self.lock().unwrap()).get_read_state() = ReadState::Error(panError(code));
+        }
+        _ => {}
+    }
+    debug!("read handler finished code matching");
 
-            // check if the future has been awaited already (polled)
-            // if so, the waker has been stored, and we need to call it
-            //match &listen_conn.borrow_mut().waker
-            match &(&mut _self.lock().unwrap()).waker {
-                Some(w) => {
-                    w.clone().wake();
-                    //  listen_conn.borrow_mut().waker=None;
-                    (&mut _self.lock().unwrap()).waker = None;
-                }
-                None => {}
-            };
-        })
+    // check if the future has been awaited already (polled)
+    // if so, the waker has been stored, and we need to call it
 
-        //Rc::new(my_closure)
+    match _self.lock() {
+        Ok(ref mut c) => match c.get_waker() {
+            Some(ref mut w) => {
+                w.clone().wake();
+                *c.get_waker() = None;
+            }
+            None => {}
+        },
+        Err(e) => {
+            panic!("read handler cannot get lock on conn");
+        }
     }
 
-    //pub unsafe fn read<'c,'b,'a>(self: &'a mut ListenConn, recv_buffer: &'b mut [u8]) -> ReadFuture<'a>
-    pub unsafe fn async_read<'c, 'b, 'a>(
-        //self: &'a mut ListenConn,
-        this: Arc<Mutex<ListenConn>>,
-        recv_buffer: &'b mut Vec<u8>,
-    ) -> ReadFuture {
-        //      let  listen_conn = Rc::< RefCell<&'a mut ListenConn > >::new( RefCell::<& 'a mut ListenConn>::new(self) );
+    debug!("read handler done ");
+}
 
+unsafe extern "C" fn write_completer<C>(arc: *mut c_void, code: PanError)
+where
+    C: Connection,
+{
+    let mut _self: Arc<Mutex<C>> = Arc::<Mutex<C>>::from_raw(std::mem::transmute(arc));
+    debug!(" write_handler invoked with code: {}", code);
+    match code {
+        PAN_ERR_OK => {
+            match _self.lock() {
+                Ok(ref mut c) => {
+                    debug!("write handler got the lock :)");
+                    match c.get_write_state() {
+                        WriteState::WaitWrite { bytes_written: br } => {
+                            debug!("write_handler found state: wait_reading");
+                            *c.get_write_state() = WriteState::ReadyWriting {
+                                bytes_written: **br,
+                            };
+                        }
+                        WriteState::Initial => {
+                            debug!("write_handler found unexpected state: Initial");
+                            // return; // dont call the waker
+                        }
+                        WriteState::Error(_) => {
+                            debug!("write handler found unexpected state: ReadReady");
+                        }
+                        WriteState::ReadyWriting { .. } => {
+                            debug!("write_handler found unexpected state: Ready");
+                        }
+                    };
+                }
+                Err(_) => {
+                    panic!("write handler cant get lock");
+                }
+            }
+        }
+        PAN_ERR_DEADLINE => {
+            *(&mut _self.lock().unwrap()).get_write_state() = WriteState::Error(panError(code));
+        }
+        PAN_ERR_FAILED => {
+            *(&mut _self.lock().unwrap()).get_write_state() = WriteState::Error(panError(code));
+        }
+        _ => {}
+    }
+    debug!(" write handler finished code matching");
+
+    // check if the future has been awaited already (polled)
+    // if so, the waker has been stored, and we need to call it
+
+    match _self.lock() {
+        Ok(ref mut c) => match c.get_write_waker() {
+            Some(ref mut w) => {
+                w.clone().wake();
+                *c.get_write_waker() = None;
+            }
+            None => {}
+        },
+        Err(e) => {
+            panic!("write handler cannot get lock on conn");
+        }
+    }
+
+    debug!("write handler done ");
+}
+
+// maybe add the timeout as a parameter here (now its a member of the listen-conn)
+unsafe fn async_write_some_impl<C>(
+    this: Arc<Mutex<C>>,
+    send_buff: &[u8],
+    to: PanUDPAddr,
+    via: Option<PanPath>,
+) -> WriteFuture<C>
+where
+    C: Connection,
+    C: IsSameType<Conn>,
+    C: IsSameType<ListenConn>,
+{
+    let mut handle = 0;
+    let mut write_tout = 0;
+
+    let mut _write_future: WriteFuture<C>;
+    {
         let mut s = this.lock().unwrap();
-        let handle = s.get_handle();
-        let read_tout = s.async_read_timeout;
-        let mut fcn_closure: Rc<dyn FnClone>;
-        let mut _read_future: ReadFuture;
+        handle = s.get_handle();
+        write_tout = *s.get_async_write_timeout();
+    }
 
-        //let mut this: Arc<Mutex< ListenConn >> = Arc::new(Mutex::new(self) );
-        //let mut from_addr: PanUDPAddr = 0;
-        //let mut byte_read: std::os::raw::c_int = 0;
+    _write_future = WriteFuture::<C>::new(this.clone());
 
-        // start the async read
+    let ffn: Option<unsafe extern "C" fn(*mut std::ffi::c_void, PanError)> =
+        Some(write_completer::<C>);
+    let mut err: PanError = PAN_ERR_FAILED;
 
-        //        let mut conn  =  listen_conn.borrow_mut(); // : RefMut<'c,& mut ListenConn<'c> >
+    if <C as IsSameType<ListenConn>>::IS_SAME_TYPE {
+        if via.is_none() {
+            err = PanListenConnWriteToAsync(
+                handle,
+                send_buff.as_ptr() as *const c_void,
+                send_buff.len() as i32,
+                to,
+                &mut *_write_future.bytes_written as *mut i32,
+                write_tout,
+                ffn,
+                Arc::<std::sync::Mutex<C>>::into_raw(this.clone()) as *mut c_void,
+            );
+        } else {
+            err = PanListenConnWriteToViaAsync(
+                handle,
+                send_buff.as_ptr() as *const c_void,
+                send_buff.len() as i32,
+                to,
+                via.unwrap(),
+                &mut *_write_future.bytes_written as *mut i32,
+                write_tout,
+                ffn,
+                Arc::<std::sync::Mutex<C>>::into_raw(this.clone()) as *mut c_void,
+            );
+        }
+    } else if <C as IsSameType<Conn>>::IS_SAME_TYPE {
+        if via.is_none() {
+            err = PanConnWriteAsync(
+                handle,
+                send_buff.as_ptr() as *const c_void,
+                send_buff.len() as i32,
+                &mut *_write_future.bytes_written as *mut i32,
+                write_tout,
+                ffn,
+                Arc::<std::sync::Mutex<C>>::into_raw(this.clone()) as *mut c_void,
+            );
+        } else {
+            err = PanConnWriteViaAsync(
+                handle,
+                send_buff.as_ptr() as *const c_void,
+                send_buff.len() as i32,
+                via.unwrap(),
+                &mut *_write_future.bytes_written as *mut i32,
+                write_tout,
+                ffn,
+                Arc::<std::sync::Mutex<C>>::into_raw(this.clone()) as *mut c_void,
+            );
+        }
+    }
 
-        fcn_closure = Self::read_completion(this.clone());
+    // check if the write was ready right away
+    if err == PAN_ERR_OK {
+        debug!("Go write completed immediately");
+        // the write already has completed successfully
+        // and the waker wont be called, as the results are already available
 
-        _read_future = ReadFuture::new(this.clone());
+        // return a WriteFuture that is instantly Ready when polled
 
-        //std::mem::replace(&mut listen_conn.borrow_mut().read_complete,None);
-        // self.read_complete  =None;
-        //listen_conn.borrow_mut().read_complete = Some( fcn_closure ); // completion must outlive the current read call
-        // self.read_complete = Some(dyn_clone::clone_box(&*&fcn_closure));
-        let fcn_ = Rc::into_raw(fcn_closure) as *mut c_void;
-        //  let fcn_ = Box::into_raw( self.read_complete.unwrap() ) as *mut c_void;
+        *this.lock().unwrap().get_write_state() = WriteState::ReadyWriting {
+            bytes_written: *_write_future.bytes_written as i32,
+        };
+        _write_future
+    } else if err == PAN_ERR_WOULDBLOCK {
+        println!("Go write returned WOULDBLOCK");
+        /* return a WriteFuture that when polled:
 
-        let err: PanError = PanListenConnReadFromAsync(
+        - is not instantly ready unless the completion_handler was called
+         but returns Pending
+
+        */
+
+        *this.lock().unwrap().get_write_state() = WriteState::WaitWrite {
+            bytes_written: &mut *_write_future.bytes_written as *mut i32,
+        };
+        debug!("main go the lock");
+        _write_future
+    } else {
+        println!("Go write returned FAILURE ");
+        // there was a real error and we are screwed
+        *this.lock().unwrap().get_write_state() = WriteState::Error(panError(err));
+        _write_future
+    }
+}
+
+async fn async_write_impl<C>(
+    this: Arc<Mutex<C>>,
+    send_buff: &[u8],
+    to: PanUDPAddr,
+    via: Option<PanPath>,
+) -> Result<(), Box<dyn Error>>
+where
+    C: Connection,
+    C: IsSameType<Conn>,
+    C: IsSameType<ListenConn>,
+{
+    let bytes_to_send: i32 = send_buff.len() as i32;
+    let mut bytes_written: i32 = 0;
+
+    while bytes_to_send > bytes_written {
+        bytes_written += unsafe {
+            async_write_some_impl::<C>(
+                this.clone(),
+                &send_buff[bytes_written as usize..(bytes_to_send - bytes_written) as usize],
+                to,
+                via,
+            )
+        }
+        .await?
+    }
+    Ok(())
+}
+
+// actuall async_read_some_impl
+unsafe fn async_read_impl<'b, C>(
+    this: Arc<Mutex<C>>,
+    recv_buffer: &'b mut Vec<u8>, //  from: & mut PanUDPAddr,
+) -> ReadFuture<C>
+where
+    C: Connection,
+    C: IsSameType<ListenConn>,
+    C: IsSameType<Conn>,
+{
+    let mut handle = 0;
+    let mut read_tout = 0;
+
+    let mut _read_future: ReadFuture<C>;
+    {
+        let mut s = this.lock().unwrap();
+        handle = s.get_handle();
+        read_tout = *s.get_async_read_timeout();
+    }
+
+    _read_future = ReadFuture::new(this.clone());
+
+    let ffn: Option<unsafe extern "C" fn(*mut std::ffi::c_void, PanError)> =
+        Some(read_completer::<C>);
+
+    let mut err: PanError = PAN_ERR_FAILED;
+    if <C as IsSameType<ListenConn>>::IS_SAME_TYPE {
+        err = PanListenConnReadFromAsyncVia(
             handle,
             recv_buffer.as_mut_ptr() as *mut c_void,
             recv_buffer.len() as i32,
             &mut _read_future.from as *mut PanUDPAddr,
+            &mut _read_future.path as *mut PanPath,
             &mut _read_future.bytes as *mut i32,
             read_tout,
-            Some(unsafe { std::mem::transmute(fcn_) }),
+            ffn,
+            Arc::<std::sync::Mutex<C>>::into_raw(this.clone()) as *mut c_void,
         );
+    } else if <C as IsSameType<Conn>>::IS_SAME_TYPE {
+        err = PanConnReadViaAsync(
+            handle,
+            recv_buffer.as_mut_ptr() as *mut c_void,
+            recv_buffer.len() as i32,
+            &mut _read_future.path as *mut PanPath,
+            &mut _read_future.bytes as *mut i32,
+            read_tout,
+            ffn,
+            Arc::<std::sync::Mutex<C>>::into_raw(this.clone()) as *mut c_void,
+        );
+    }
 
-        // check if the read was ready right away
-        if err == PAN_ERR_OK {
-            // the read already has completed successfully
-            // and the waker wont be called, as the results are already available
+    // check if the read was ready right away
+    if err == PAN_ERR_OK {
+        debug!("Go read completed immediately");
+        // the read already has completed successfully
+        // and the waker wont be called, as the results are already available
 
-            // return a ReadFuture that is instantly Ready when polled
+        // return a ReadFuture that is instantly Ready when polled
 
-            this.lock().unwrap().read_state = ReadState::ReadyReading {
-                buffer: recv_buffer as *mut Vec<u8>,
-                from: _read_future.from,
-                bytes_read: _read_future.bytes as i32,
-            };
-            _read_future
-        } else if err == PAN_ERR_WOULDBLOCK {
-            /* return a ReadFuture that when polled:
+        *this.lock().unwrap().get_read_state() = ReadState::ReadyReading {
+            buffer: recv_buffer as *mut Vec<u8>,
+            from: _read_future.from,
+            path: _read_future.path,
+            bytes_read: _read_future.bytes as i32,
+        };
+        _read_future
+    } else if err == PAN_ERR_WOULDBLOCK {
+        debug!("Go read wouldblock");
+        /* return a ReadFuture that when polled:
 
-            - is not instantly ready unless the completion_handler was called
-             but returns Pending
+        - is not instantly ready unless the completion_handler was called
+         but returns Pending
 
-            */
+        */
 
-            this.lock().unwrap().read_state = ReadState::WaitReading {
-                buffer: recv_buffer as *mut Vec<u8>,
-                from: &mut _read_future.from as *mut PanUDPAddr,
-                bytes_read: &mut _read_future.bytes as *mut i32,
-            };
-            _read_future
-        } else {
-            // there was a real error and we are screwed
-            this.lock().unwrap().read_state = ReadState::Error(panError(err));
-            _read_future
+        *this.lock().unwrap().get_read_state() = ReadState::WaitReading {
+            buffer: recv_buffer as *mut Vec<u8>,
+            from: &mut _read_future.from as *mut PanUDPAddr,
+            path: &mut _read_future.path as *mut PanPath,
+            bytes_read: &mut _read_future.bytes as *mut i32,
+        };
+        debug!("main go the lock");
+        _read_future
+    } else {
+        println!("Go read returned FAILURE ");
+        // there was a real error and we are screwed
+        *this.lock().unwrap().get_read_state() = ReadState::Error(panError(err));
+        _read_future
+    }
+}
+
+impl ListenConn {
+    pub async fn async_write_some_to(
+        this: Arc<Mutex<ListenConn>>,
+        send_buff: &[u8],
+        to: PanUDPAddr,
+    ) -> Result<i32, Box<dyn Error>> {
+        unsafe { async_write_some_impl::<ListenConn>(this, send_buff, to, None).await }
+    }
+
+    pub async fn async_write_to(
+        this: Arc<Mutex<ListenConn>>,
+        send_buff: &[u8],
+        to: PanUDPAddr,
+    ) -> Result<(), Box<dyn Error>> {
+        async_write_impl::<ListenConn>(this, send_buff, to, None).await
+    }
+
+    pub async fn async_write_to_via(
+        this: Arc<Mutex<ListenConn>>,
+        send_buff: &[u8],
+        to: PanUDPAddr,
+        via: PanPath,
+    ) -> Result<(), Box<dyn Error>> {
+        async_write_impl::<ListenConn>(this, send_buff, to, Some(via)).await
+    }
+
+    pub async fn async_write_some_to_via(
+        this: Arc<Mutex<ListenConn>>,
+        send_buff: &Vec<u8>,
+        to: PanUDPAddr,
+        via: PanPath,
+    ) -> Result<i32, Box<dyn Error>> {
+        unsafe { async_write_some_impl::<ListenConn>(this, send_buff, to, Some(via)).await }
+    }
+
+    // actually async_read_some
+    pub async fn async_read(
+        this: Arc<Mutex<ListenConn>>,
+        recv_buff: &mut Vec<u8>,
+    ) -> Result<i32, Box<dyn Error>> {
+        match unsafe { async_read_impl::<ListenConn>(this, recv_buff).await } {
+            Ok((i32, _, _)) => Ok(i32),
+            Err(e) => Err(e),
         }
     }
+
+    // actually async_read_some_from
+    pub async fn async_read_from(
+        this: Arc<Mutex<ListenConn>>,
+        recv_buff: &mut Vec<u8>,
+    ) -> Result<(i32, PanUDPAddr), Box<dyn Error>> {
+        match unsafe { async_read_impl::<ListenConn>(this, recv_buff).await } {
+            Ok((i32, from, _)) => Ok((i32, from)),
+            Err(e) => Err(e),
+        }
+    }
+
+    // actually async_read_some_from_via
+    pub async fn async_read_from_via(
+        this: Arc<Mutex<ListenConn>>,
+        recv_buff: &mut Vec<u8>,
+    ) -> Result<(i32, PanUDPAddr, PanPath), Box<dyn Error>> {
+        unsafe { async_read_impl::<ListenConn>(this, recv_buff).await }
+    }
+
     /*
     pub async fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
         self.stream.read(buffer).await
@@ -877,10 +1268,8 @@ pub struct ConnSockAdapter {
 }
 
 impl ConnSockAdapter {
-
-    pub unsafe fn new( handle:  Pan_GoHandle) ->ConnSockAdapter
-    {
-        Self{h: handle}
+    pub unsafe fn new(handle: Pan_GoHandle) -> ConnSockAdapter {
+        Self { h: handle }
     }
 
     pub unsafe fn close(&mut self) {
@@ -920,9 +1309,93 @@ pub struct Conn {
     h: Pan_GoHandle,
     policy: Option<Box<dyn PathPolicy>>,
     selector: Option<Box<dyn PathSelector>>,
+
+    read_state: ReadState,
+    write_state: WriteState,
+
+    async_read_timeout: std::os::raw::c_int,  // milliseconds
+    async_write_timeout: std::os::raw::c_int, // milliseconds
+
+    waker: Option<Waker>,
+    write_waker: Option<Waker>,
+}
+
+impl Connection for Conn {
+    fn get_read_state(&mut self) -> &mut ReadState {
+        &mut self.read_state
+    }
+    fn get_write_state(&mut self) -> &mut WriteState {
+        &mut self.write_state
+    }
+
+    fn get_async_read_timeout(&mut self) -> &mut std::os::raw::c_int {
+        &mut self.async_read_timeout
+    }
+    fn get_async_write_timeout(&mut self) -> &mut std::os::raw::c_int {
+        &mut self.async_write_timeout
+    }
+
+    fn get_waker(&mut self) -> &mut Option<Waker> {
+        &mut self.waker
+    }
+    fn get_write_waker(&mut self) -> &mut Option<Waker> {
+        &mut self.write_waker
+    }
 }
 
 impl Conn {
+    pub async fn async_write_some(
+        this: Arc<Mutex<Conn>>,
+        send_buff: &[u8],
+    ) -> Result<i32, Box<dyn Error>> {
+        unsafe { async_write_some_impl::<Conn>(this, send_buff, 0, None).await }
+    }
+
+    pub async fn async_write(
+        this: Arc<Mutex<Conn>>,
+        send_buff: &[u8],
+    ) -> Result<(), Box<dyn Error>> {
+        async_write_impl::<Conn>(this, send_buff, 0, None).await
+    }
+
+    pub async fn async_write_via(
+        this: Arc<Mutex<Conn>>,
+        send_buff: &[u8],
+        via: PanPath,
+    ) -> Result<(), Box<dyn Error>> {
+        async_write_impl::<Conn>(this, send_buff, 0, Some(via)).await
+    }
+
+    pub async fn async_write_some_via(
+        this: Arc<Mutex<Conn>>,
+        send_buff: &Vec<u8>,
+        via: PanPath,
+    ) -> Result<i32, Box<dyn Error>> {
+        unsafe { async_write_some_impl::<Conn>(this, send_buff, 0, Some(via)).await }
+    }
+
+    // actually async_read_some
+    pub async fn async_read(
+        this: Arc<Mutex<Conn>>,
+        recv_buff: &mut Vec<u8>,
+    ) -> Result<i32, Box<dyn Error>> {
+        match unsafe { async_read_impl::<Conn>(this, recv_buff).await } {
+            Ok((i32, _, _)) => Ok(i32),
+            Err(e) => Err(e),
+        }
+    }
+
+    // actually async_read_some_via
+    pub async fn async_read_via(
+        this: Arc<Mutex<Conn>>,
+        recv_buff: &mut Vec<u8>,
+    ) -> Result<(i32, PanPath), Box<dyn Error>> {
+        match unsafe { async_read_impl::<Conn>(this, recv_buff).await } {
+            Ok((i, _, p)) => Ok((i, p)),
+            Err(e) => Err(e),
+        }
+    }
+
     pub unsafe fn close(&mut self) {
         if self.is_valid() {
             PanConnClose(self.get_handle());
@@ -982,13 +1455,12 @@ impl Conn {
         PanConnSetWriteDeadline(self.get_handle(), timeout);
     }
 
-    pub unsafe fn write(self: &Self, buffer: &[u8]) -> Result<i32, Box<dyn Error>> 
-    {
+    pub unsafe fn write(self: &Self, buffer: &[u8]) -> Result<i32, Box<dyn Error>> {
         let mut n: i32 = 0;
         let err = PanConnWrite(
             self.get_handle(),
             buffer.as_ptr() as *const std::os::raw::c_void,
-            buffer.len() as std::os::raw::c_int,            
+            buffer.len() as std::os::raw::c_int,
             &mut n as *mut std::os::raw::c_int,
         );
 
@@ -1057,21 +1529,25 @@ impl Conn {
         }
     }
 
-    pub unsafe fn createSockAdaper(self: &mut Self, go_socket_path: &str, c_socket_path: &str) -> Result<ConnSockAdapter,Box<dyn Error>>
-    {
+    pub unsafe fn createSockAdaper(
+        self: &mut Self,
+        go_socket_path: &str,
+        c_socket_path: &str,
+    ) -> Result<ConnSockAdapter, Box<dyn Error>> {
         let mut handle: Pan_GoHandle = Pan_GoHandle::default();
 
-        let err = PanNewConnSockAdapter( self.get_handle() ,
-         go_socket_path.as_ptr() as * const i8,  
-    c_socket_path.as_ptr() as * const i8,
-handle.resetAndGetAddressOf() as *mut PanConnSockAdapter);
+        let err = PanNewConnSockAdapter(
+            self.get_handle(),
+            go_socket_path.as_ptr() as *const i8,
+            c_socket_path.as_ptr() as *const i8,
+            handle.resetAndGetAddressOf() as *mut PanConnSockAdapter,
+        );
 
-if err==0
-{
-Ok( ConnSockAdapter::new(handle))
-}else {
-    Err(Box::new(panError(err)))
-}
+        if err == 0 {
+            Ok(ConnSockAdapter::new(handle))
+        } else {
+            Err(Box::new(panError(err)))
+        }
     }
 }
 
@@ -1082,6 +1558,12 @@ impl Default for Conn {
                 h: Pan_GoHandle::default(),
                 selector: None,
                 policy: None,
+                waker: None,
+                write_waker: None,
+                read_state: ReadState::Initial,
+                write_state: WriteState::Initial,
+                async_read_timeout: 100,  //ms
+                async_write_timeout: 100, //ms
             }
         }
     }
@@ -1102,97 +1584,4 @@ impl GoHandleOwner for Conn {
         let prt: usize = self.h.release() as usize;
         prt
     }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use std::mem;
-
-    /*
-    #[test]
-    fn round_trip_compression_decompression() {
-        unsafe {
-            let input = include_str!("../futurama-quotes.txt").as_bytes();
-            let mut compressed_output: Vec<u8> = vec![0; input.len()];
-            let mut decompressed_output: Vec<u8> = vec![0; input.len()];
-
-            // Construct a compression stream.
-            let mut stream: bz_stream = mem::zeroed();
-            let result = BZ2_bzCompressInit(&mut stream as *mut _,
-                                            1,   // 1 x 100000 block size
-                                            4,   // verbosity (4 = most verbose)
-                                            0);  // default work factor
-            match result {
-                r if r == (BZ_CONFIG_ERROR as _) => panic!("BZ_CONFIG_ERROR"),
-                r if r == (BZ_PARAM_ERROR as _) => panic!("BZ_PARAM_ERROR"),
-                r if r == (BZ_MEM_ERROR as _) => panic!("BZ_MEM_ERROR"),
-                r if r == (BZ_OK as _) => {},
-                r => panic!("Unknown return value = {}", r),
-            }
-
-            // Compress `input` into `compressed_output`.
-            stream.next_in = input.as_ptr() as *mut _;
-            stream.avail_in = input.len() as _;
-            stream.next_out = compressed_output.as_mut_ptr() as *mut _;
-            stream.avail_out = compressed_output.len() as _;
-            let result = BZ2_bzCompress(&mut stream as *mut _, BZ_FINISH as _);
-            match result {
-                r if r == (BZ_RUN_OK as _) => panic!("BZ_RUN_OK"),
-                r if r == (BZ_FLUSH_OK as _) => panic!("BZ_FLUSH_OK"),
-                r if r == (BZ_FINISH_OK as _) => panic!("BZ_FINISH_OK"),
-                r if r == (BZ_SEQUENCE_ERROR as _) => panic!("BZ_SEQUENCE_ERROR"),
-                r if r == (BZ_STREAM_END as _) => {},
-                r => panic!("Unknown return value = {}", r),
-            }
-
-            // Finish the compression stream.
-            let result = BZ2_bzCompressEnd(&mut stream as *mut _);
-            match result {
-                r if r == (BZ_PARAM_ERROR as _) => panic!("BZ_PARAM_ERROR"),
-                r if r == (BZ_OK as _) => {},
-                r => panic!("Unknown return value = {}", r),
-            }
-
-            // Construct a decompression stream.
-            let mut stream: bz_stream = mem::zeroed();
-            let result = BZ2_bzDecompressInit(&mut stream as *mut _,
-                                              4,   // verbosity (4 = most verbose)
-                                              0);  // default small factor
-            match result {
-                r if r == (BZ_CONFIG_ERROR as _) => panic!("BZ_CONFIG_ERROR"),
-                r if r == (BZ_PARAM_ERROR as _) => panic!("BZ_PARAM_ERROR"),
-                r if r == (BZ_MEM_ERROR as _) => panic!("BZ_MEM_ERROR"),
-                r if r == (BZ_OK as _) => {},
-                r => panic!("Unknown return value = {}", r),
-            }
-
-            // Decompress `compressed_output` into `decompressed_output`.
-            stream.next_in = compressed_output.as_ptr() as *mut _;
-            stream.avail_in = compressed_output.len() as _;
-            stream.next_out = decompressed_output.as_mut_ptr() as *mut _;
-            stream.avail_out = decompressed_output.len() as _;
-            let result = BZ2_bzDecompress(&mut stream as *mut _);
-            match result {
-                r if r == (BZ_PARAM_ERROR as _) => panic!("BZ_PARAM_ERROR"),
-                r if r == (BZ_DATA_ERROR as _) => panic!("BZ_DATA_ERROR"),
-                r if r == (BZ_DATA_ERROR_MAGIC as _) => panic!("BZ_DATA_ERROR"),
-                r if r == (BZ_MEM_ERROR as _) => panic!("BZ_MEM_ERROR"),
-                r if r == (BZ_OK as _) => panic!("BZ_OK"),
-                r if r == (BZ_STREAM_END as _) => {},
-                r => panic!("Unknown return value = {}", r),
-            }
-
-            // Close the decompression stream.
-            let result = BZ2_bzDecompressEnd(&mut stream as *mut _);
-            match result {
-                r if r == (BZ_PARAM_ERROR as _) => panic!("BZ_PARAM_ERROR"),
-                r if r == (BZ_OK as _) => {},
-                r => panic!("Unknown return value = {}", r),
-            }
-
-            assert_eq!(input, &decompressed_output[..]);
-        }
-    }
-    */
 }

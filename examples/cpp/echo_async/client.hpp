@@ -19,7 +19,7 @@
 #include "common/message_parser.hpp"
 #include "pan/pan.hpp"
 
-#include <asio.hpp>
+#include <boost/asio.hpp>
 
 #include <cstdint>
 #include <filesystem>
@@ -69,7 +69,7 @@ public:
     }
 
 private:
-    void connected(const asio::error_code& error)
+    void connected(const system::error_code& error)
     {
         using namespace std::placeholders;
 
@@ -81,7 +81,7 @@ private:
         socket.async_send(asio::buffer(buffer), std::bind(&Client::sent, this, _1, _2));
     }
 
-    void sent(const asio::error_code& error, size_t bytes)
+    void sent(const system::error_code& error, size_t bytes)
     {
         using namespace std::placeholders;
 
@@ -95,7 +95,7 @@ private:
         socket.async_receive(asio::buffer(buffer), std::bind(&Client::received, this, _1, _2));
     }
 
-    void received(const asio::error_code& error, size_t bytes)
+    void received(const system::error_code& error, size_t bytes)
     {
         if (error) {
             std::cerr << "ASIO error: " << error.message() << std::endl;

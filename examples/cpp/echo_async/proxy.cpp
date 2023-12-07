@@ -17,7 +17,7 @@
 #include <iostream>
 #include <iomanip>
 
-
+using namespace boost;
 ScionUDPAddr parseProxyHeader(const char* buffer, size_t len)
 {
     ScionUDPAddr addr;

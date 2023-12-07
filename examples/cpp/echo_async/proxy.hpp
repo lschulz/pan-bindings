@@ -14,7 +14,7 @@
 
 #pragma once
 
-#include <asio.hpp>
+#include <boost/asio.hpp>
 #include <cstdint>
 
 
@@ -26,7 +26,7 @@ struct ScionUDPAddr
 {
     uint8_t isd[2];
     uint8_t asn[6];
-    asio::ip::address ip;
+    boost::asio::ip::address ip;
     uint16_t port;
 };
 

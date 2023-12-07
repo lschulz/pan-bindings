@@ -20,8 +20,12 @@ typedef struct { const char *p; ptrdiff_t n; } _GoString_;
 
 
 #line 17 "pan_wrapper.go"
-
+#ifdef BINDGEN
+// the rust cargo build sets this Define, because of a bug in bindgen 
+#include "pan_cdefs.h"
+#else
  #include "pan/pan_cdefs.h"
+ #endif
  #define PAN_STREAM_HDR_SIZE 4
  #define PAN_ADDR_HDR_SIZE 32
  /** \file
@@ -262,8 +266,6 @@ extern PanError PanListenConnReadFrom(PanListenConn conn, void* buffer, int len,
 
 /**
 \brief Wrapper for `(pan.ListenConn).ReadFrom`
-\attention experimental non-blocking Read feature
-	it is intended to replace the ListenSockAdapter workaround (unix-domain sockets)
 \param[in] conn Listening connection.
 \param[in] buffer Pointer to a buffer that will receive the packet.
 \param[in] len Size of \p buffer in bytes.
@@ -271,20 +273,11 @@ extern PanError PanListenConnReadFrom(PanListenConn conn, void* buffer, int len,
 \param[out] n Number of bytes read. Can be NULL to ignore.
 \return `PAN_ERR_OK` on success.
 	`PAN_ERR_DEADLINE` if the deadline was exceeded.
-	`PAN_ERR_WOULDBLOCK' if no data is yet available
 	`PAN_ERR_FAILED` if the operation failed.
 \ingroup listen_conn
-\details this method initiates a read operation and returns imediately.
-	If data was available to read, it is copied to the out-parameters 
-	which is indicated with return code success.
-	If no data is available, a suspended goroutine is launched instead,
-	which waits for data to become ready on the socket.
-	Once the goroutine is resumed, either because of timeout or arrival of new data,
-	the provided waker is invoked with a return-code that indicated what happened.
-	If the waker is invoked with ERR_Ok it is guaranteed, that the data has been 
-	copied to the provided outparameters.
 */
-extern PanError PanListenConnReadFromAsync(PanListenConn conn, void* buffer, int len, PanUDPAddr* from, int* n, int timeout_duration, OnCompletionWaker waker);
+extern PanError PanListenConnReadFromAsync(PanListenConn conn, void* buffer, int len, PanUDPAddr* from, int* n, int timeout_duration, OnCompletionWaker waker, void* arc_conn);
+extern PanError PanListenConnReadFromAsyncVia(PanListenConn conn, void* buffer, int len, PanUDPAddr* from, PanPath* path, int* n, int timeout_duration, OnCompletionWaker waker, void* arc_conn);
 
 /**
 \brief Wrapper for `(pan.ListenConn).ReadFromVia`
@@ -315,6 +308,8 @@ extern PanError PanListenConnReadFromVia(PanListenConn conn, void* buffer, int l
 \ingroup listen_conn
 */
 extern PanError PanListenConnWriteTo(PanListenConn conn, cvoid_t* buffer, int len, PanUDPAddr to, int* n);
+extern PanError PanListenConnWriteToAsync(PanListenConn conn, cvoid_t* buffer, int len, PanUDPAddr to, int* n, int timeout, OnCompletionWaker waker, void* arc_conn);
+extern PanError PanListenConnWriteToViaAsync(PanListenConn conn, cvoid_t* buffer, int len, PanUDPAddr to, PanPath path, int* n, int timeout, OnCompletionWaker waker, void* arc_conn);
 
 /**
 \brief Wrapper for `(pan.ListenConn).WriteToVia`
@@ -412,6 +407,7 @@ extern PanError PanConnRead(PanConn conn, void* buffer, int len, int* n);
 \ingroup conn
 */
 extern PanError PanConnReadVia(PanConn conn, void* buffer, int len, PanPath* path, int* n);
+extern PanError PanConnReadViaAsync(PanConn conn, void* buffer, int len, PanPath* path, int* n, int timeout, OnCompletionWaker waker, void* arc_conn);
 
 /**
 \brief Wrapper for `(pan.Conn).Write`
@@ -426,6 +422,7 @@ extern PanError PanConnReadVia(PanConn conn, void* buffer, int len, PanPath* pat
 \ingroup conn
 */
 extern PanError PanConnWrite(PanListenConn conn, cvoid_t* buffer, int len, int* n);
+extern PanError PanConnWriteAsync(PanListenConn conn, cvoid_t* buffer, int len, int* n, int timeout, OnCompletionWaker waker, void* arc_conn);
 
 /**
 \brief Wrapper for `(pan.Conn).WriteVia`
@@ -440,6 +437,7 @@ extern PanError PanConnWrite(PanListenConn conn, cvoid_t* buffer, int len, int* 
 \ingroup conn
 */
 extern PanError PanConnWriteVia(PanListenConn conn, cvoid_t* buffer, int len, PanPath path, int* n);
+extern PanError PanConnWriteViaAsync(PanListenConn conn, cvoid_t* buffer, int len, PanPath path, int* n, int timeout, OnCompletionWaker waker, void* arc_conn);
 
 /**
 \brief Wrapper for (pan.Conn).LocalAddr

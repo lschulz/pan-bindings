@@ -146,6 +146,7 @@ class PathPolicy
 public:
     DLLEXPORT
     PathPolicy();
+    virtual ~PathPolicy(){}
 
     operator bool() const noexcept { return h.isValid(); }
     bool isValid() const noexcept { return h.isValid(); }
@@ -170,6 +171,7 @@ class PathSelector
 public:
     DLLEXPORT
     PathSelector();
+    virtual ~PathSelector(){}
 
     operator bool() const noexcept { return h.isValid(); }
     bool isValid() const noexcept { return h.isValid(); }
@@ -203,6 +205,7 @@ class ReplySelector
 public:
     DLLEXPORT
     ReplySelector();
+    virtual ~ReplySelector(){}
 
     operator bool() const noexcept { return h.isValid(); }
     bool isValid() const noexcept { return h.isValid(); }
@@ -408,7 +411,13 @@ public:
     DLLEXPORT
     ListenSockAdapter createSockAdapter(const char* goSocketPath, const char* cSocketPath);
     ListenSockAdapter createSockAdapter(const char* goSocketPath, const char* cSocketPath, std::error_code &ec) noexcept;
-
+#endif
+#ifdef UNIX_STREAM_AVAILABLE
+    DLLEXPORT
+    ListenSSockAdapter createSSockAdapter(const char* goSocketPath);
+    DLLEXPORT
+    ListenSSockAdapter createSSockAdapter(const char* goSocketPath, std::error_code &ec) noexcept;
+#endif
 private:
     GoHandle h;
     std::unique_ptr<ReplySelector> selector;

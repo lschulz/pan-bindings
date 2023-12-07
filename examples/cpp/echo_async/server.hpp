@@ -19,13 +19,14 @@
 #include "common/message_parser.hpp"
 #include "pan/pan.hpp"
 
-#include <asio.hpp>
+#include <boost/asio.hpp>
 
 #include <cstdint>
 #include <filesystem>
 #include <iostream>
 #include <vector>
 
+using namespace boost;
 
 class Server
 {
@@ -65,7 +66,7 @@ public:
     }
 
 private:
-    void connected(const asio::error_code& error)
+    void connected(const system::error_code& error)
     {
         using namespace std::placeholders;
 
@@ -80,7 +81,7 @@ private:
         socket.async_receive(asio::buffer(buffer), std::bind(&Server::received, this, _1, _2));
     }
 
-    void received(const asio::error_code& error, size_t bytes)
+    void received(const system::error_code& error, size_t bytes)
     {
         using namespace std::placeholders;
 
@@ -106,7 +107,7 @@ private:
         }
     }
 
-    void sent(const asio::error_code& error, size_t bytes)
+    void sent(const system::error_code& error, size_t bytes)
     {
         using namespace std::placeholders;
 
@@ -120,7 +121,7 @@ private:
         socket.async_receive(asio::buffer(buffer), std::bind(&Server::received, this, _1, _2));
     }
 
-    void cancel(const asio::error_code& error, int signal)
+    void cancel(const system::error_code& error, int signal)
     {
         if (error) {
             std::cerr << "ASIO error: " << error.message() << std::endl;
