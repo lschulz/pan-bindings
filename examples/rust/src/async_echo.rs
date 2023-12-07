@@ -96,7 +96,7 @@ impl Server {
 
                 match res {
                     Ok((read, from_addr, path_from)) => {
-                        println!("async-read successfull ");
+                        debug!("async-read successfull ");
                         from = Endpoint::new(Pan_GoHandle::new1(from_addr as u64));
 
                         println!("received {} bytes from {}", read, from.to_string());
@@ -130,10 +130,10 @@ impl Server {
                     Err(e) => {
                         if e.downcast_ref::<panError>().unwrap().0 == panError(PAN_ERR_DEADLINE).0 {
                             // client is done
-                            println!("timeout");
+                            debug!("timeout");
                             return Ok(());
                         } else {
-                            println!("async_read failed");
+                            debug!("async_read failed");
                             return Err(e);
                         }
                     }
@@ -249,7 +249,7 @@ impl Client {
 }
 
 fn main() {
-    SimpleLogger::init(LevelFilter::Debug, Config::default());
+  //  SimpleLogger::init(LevelFilter::Debug, Config::default());
 
     let args = Arguments::parse();
 

@@ -579,7 +579,7 @@ func PanListenConnReadFromAsync(conn C.PanListenConn, buffer *C.void, len C.int,
 
 	// Set read deadline to zero for non-blocking read
 	if err := c.SetReadDeadline(time.Now()); err != nil {
-		fmt.Println("Error setting read deadline:", err)
+		// fmt.Println("Error setting read deadline:", err)
 		return C.PAN_ERR_FAILED
 	}
 
@@ -610,12 +610,9 @@ func PanListenConnReadFromAsync(conn C.PanListenConn, buffer *C.void, len C.int,
 		var t interface{ Timeout() bool } // actually it is 'serrors.basicError' but i dont want to add scionproto as a dependency
 
 		if errors.As(err, &t) {
-			fmt.Println("net.Error")
+
 			if t.Timeout() {
 				// Read would block in non-blocking mode
-				fmt.Println("Read would block (timeout)")
-
-				////////////////////////////////////////////
 
 				// Launch a goroutine for non-blocking read
 				go func() {
@@ -627,7 +624,7 @@ func PanListenConnReadFromAsync(conn C.PanListenConn, buffer *C.void, len C.int,
 
 					//		if errr := conn.SetReadDeadline(time.Now().Add(time.Duration(timeout_duration) * time.Millisecond)); errr != nil {
 					if errr := conn.SetReadDeadline(time.Time{}); errr != nil {
-						fmt.Println("Error setting read deadline:", errr)
+						// fmt.Println("Error setting read deadline:", errr)
 						// call waker with C.PAN_ERR_FAILED
 						C.InvokeCompletionWaker(completion_waker, unsafe.Pointer(arc_conn), C.PAN_ERR_FAILED)
 					}
@@ -635,7 +632,7 @@ func PanListenConnReadFromAsync(conn C.PanListenConn, buffer *C.void, len C.int,
 					nn, addr, errrr := conn.ReadFrom(buffer_out) // block here for new data
 					if errrr == nil {
 						// Data is available, signal the main caller
-						fmt.Println("read successfully completed out of band, invoking handler")
+						// read successfully completed out of band, invoking handler
 
 						if addr != nil {
 							*(*C.PanUDPAddr)(unsafe.Pointer(from_out)) = C.PanUDPAddr(cgo.NewHandle(addr))
@@ -649,12 +646,13 @@ func PanListenConnReadFromAsync(conn C.PanListenConn, buffer *C.void, len C.int,
 						C.InvokeCompletionWaker(completion_waker, unsafe.Pointer(arc_conn), C.PAN_ERR_OK)
 
 					} else {
-						fmt.Println("Error reading out of band: ", errrr)
+						// Error reading out of band
 
 						var tt interface{ Timeout() bool }
 						if errors.As(errrr, &tt) {
 							if t.Timeout() {
-								// call waker with C.PAN_ERR_DEADLINE here  -> the callback on the rust side must transition the state according to ret-code
+								// call waker with C.PAN_ERR_DEADLINE here
+								// -> the callback on the rust side must transition the state according to ret-code
 								// and eventuall reschedule the rust future to be polled again
 								C.InvokeCompletionWaker(completion_waker, unsafe.Pointer(arc_conn), C.PAN_ERR_DEADLINE)
 							}
@@ -671,13 +669,13 @@ func PanListenConnReadFromAsync(conn C.PanListenConn, buffer *C.void, len C.int,
 				// return Pending
 			} // if Timeout()
 		} else {
-			fmt.Println("Error on initial read:", err)
+			// fmt.Println("Error on initial read:", err)
 			// return error  other than timeout
 			return C.PAN_ERR_FAILED
 		}
 	} else {
 		// Read successful
-		fmt.Printf("Read %d bytes: %s\n", n, buffer[:read])
+		// fmt.Printf("Read %d bytes: %s\n", n, buffer[:read])
 
 		if add != nil {
 			*(*C.PanUDPAddr)(unsafe.Pointer(from)) = C.PanUDPAddr(cgo.NewHandle(add))
@@ -700,7 +698,7 @@ func PanListenConnReadFromAsyncVia(conn C.PanListenConn, buffer *C.void, len C.i
 
 	// Set read deadline to zero for non-blocking read
 	if err := c.SetReadDeadline(time.Now()); err != nil {
-		fmt.Println("Error setting read deadline:", err)
+		// fmt.Println("Error setting read deadline:", err)
 		return C.PAN_ERR_FAILED
 	}
 
@@ -712,12 +710,9 @@ func PanListenConnReadFromAsyncVia(conn C.PanListenConn, buffer *C.void, len C.i
 		var t interface{ Timeout() bool } // actually it is 'serrors.basicError' but i dont want to add scionproto as a dependency
 
 		if errors.As(err, &t) {
-			fmt.Println("net.Error")
+
 			if t.Timeout() {
 				// Read would block in non-blocking mode
-				fmt.Println("Read would block (timeout)")
-
-				////////////////////////////////////////////
 
 				// Launch a goroutine for non-blocking read
 				go func() {
@@ -730,7 +725,7 @@ func PanListenConnReadFromAsyncVia(conn C.PanListenConn, buffer *C.void, len C.i
 
 					//		if errr := conn.SetReadDeadline(time.Now().Add(time.Duration(timeout_duration) * time.Millisecond)); errr != nil {
 					if errr := conn.SetReadDeadline(time.Time{}); errr != nil {
-						fmt.Println("Error setting read deadline:", errr)
+						// fmt.Println("Error setting read deadline:", errr)
 						// call waker with C.PAN_ERR_FAILED
 						C.InvokeCompletionWaker(completion_waker, unsafe.Pointer(arc_conn), C.PAN_ERR_FAILED)
 						return
@@ -739,7 +734,7 @@ func PanListenConnReadFromAsyncVia(conn C.PanListenConn, buffer *C.void, len C.i
 					nn, addr, path_, errrr := conn.ReadFromVia(buffer_out) // block here for new data
 					if errrr == nil {
 						// Data is available, signal the main caller
-						fmt.Println("read successfully completed out of band, invoking handler")
+						// read successfully completed out of band, invoking handler
 
 						if from_out != nil {
 							*(*C.PanUDPAddr)(unsafe.Pointer(from_out)) = C.PanUDPAddr(cgo.NewHandle(addr))
@@ -757,7 +752,7 @@ func PanListenConnReadFromAsyncVia(conn C.PanListenConn, buffer *C.void, len C.i
 						return
 
 					} else {
-						fmt.Println("Error reading out of band: ", errrr)
+						//fmt.Println("Error reading out of band: ", errrr)
 
 						var tt interface{ Timeout() bool }
 						if errors.As(errrr, &tt) {
@@ -780,13 +775,13 @@ func PanListenConnReadFromAsyncVia(conn C.PanListenConn, buffer *C.void, len C.i
 				// return Pending
 			} // if Timeout()
 		} else {
-			fmt.Println("Error on initial read:", err)
+			// fmt.Println("Error on initial read:", err)
 			// return error  other than timeout
 			return C.PAN_ERR_FAILED
 		}
 	} else {
 		// Read successful
-		fmt.Printf("Read %d bytes: %s\n", n, buffer[:read])
+		// fmt.Printf("Read %d bytes: %s\n", n, buffer[:read])
 
 		if from != nil {
 			*(*C.PanUDPAddr)(unsafe.Pointer(from)) = C.PanUDPAddr(cgo.NewHandle(add))
@@ -916,7 +911,6 @@ func PanListenConnWriteToAsync(
 			//if t.Timeout() {
 			if true {
 
-				fmt.Println("write would block")
 				// launch a go routine for non-blocking write
 
 				go func() {
@@ -936,7 +930,6 @@ func PanListenConnWriteToAsync(
 					out, e := conn.WriteTo(send_buff, to_addr)
 
 					if e == nil {
-						fmt.Println("write successfully completed out of band")
 						if written != nil {
 							*(*C.int)(unsafe.Pointer(written)) = C.int(out)
 						}
@@ -946,7 +939,6 @@ func PanListenConnWriteToAsync(
 						if errors.As(e, &tt) {
 
 							if tt.Timeout() {
-								fmt.Println("async write timeout")
 								C.InvokeCompletionWaker(completer, unsafe.Pointer(arc_conn), C.PAN_ERR_DEADLINE)
 								return
 							}
@@ -980,7 +972,6 @@ func PanListenConnWriteToAsync(
 
 	} else { // write completed immediately
 
-		fmt.Println("write completed immediately")
 		if n != nil {
 			*(*C.int)(unsafe.Pointer(n)) = C.int(written)
 		}
@@ -1020,8 +1011,6 @@ func PanListenConnWriteToViaAsync(
 
 			//if t.Timeout() {
 			if true {
-
-				fmt.Println("write would block")
 				// launch a go routine for non-blocking write
 
 				go func() {
@@ -1041,8 +1030,8 @@ func PanListenConnWriteToViaAsync(
 
 					out, e := conn.WriteToVia(send_buff, to_addr, to_path)
 
-					if e == nil {
-						fmt.Println("write successfully completed out of band")
+					if e == nil { // write completed successfully out of band
+
 						if written != nil {
 							*(*C.int)(unsafe.Pointer(written)) = C.int(out)
 						}
@@ -1051,8 +1040,7 @@ func PanListenConnWriteToViaAsync(
 						var tt interface{ Timeout() bool }
 						if errors.As(e, &tt) {
 
-							if tt.Timeout() {
-								fmt.Println("async write timeout")
+							if tt.Timeout() { // async write timeout
 								C.InvokeCompletionWaker(completer, unsafe.Pointer(arc_conn), C.PAN_ERR_DEADLINE)
 								return
 							}
@@ -1086,7 +1074,6 @@ func PanListenConnWriteToViaAsync(
 
 	} else { // write completed immediately
 
-		fmt.Println("write completed immediately")
 		if n != nil {
 			*(*C.int)(unsafe.Pointer(n)) = C.int(written)
 		}
@@ -1330,7 +1317,7 @@ func PanConnReadViaAsync(
 
 	// Set read deadline to zero for non-blocking read
 	if erer := c.SetReadDeadline(time.Now()); erer != nil {
-		fmt.Println("Error setting read deadline:", erer)
+		// fmt.Println("Error setting read deadline:", erer)
 		return C.PAN_ERR_FAILED
 	}
 
@@ -1342,12 +1329,8 @@ func PanConnReadViaAsync(
 		var t interface{ Timeout() bool } // actually it is 'serrors.basicError' but i dont want to add scionproto as a dependency
 
 		if errors.As(err, &t) {
-			fmt.Println("net.Error")
 			if t.Timeout() {
 				// Read would block in non-blocking mode
-				fmt.Println("Read would block (timeout)")
-
-				////////////////////////////////////////////
 
 				// Launch a goroutine for non-blocking read
 				go func() {
@@ -1359,7 +1342,7 @@ func PanConnReadViaAsync(
 
 					//		if errr := conn.SetReadDeadline(time.Now().Add(time.Duration(timeout_duration) * time.Millisecond)); errr != nil {
 					if errr := conn.SetReadDeadline(time.Time{}); errr != nil {
-						fmt.Println("Error setting read deadline:", errr)
+						// fmt.Println("Error setting read deadline:", errr)
 						// call waker with C.PAN_ERR_FAILED
 						C.InvokeCompletionWaker(completion_waker, unsafe.Pointer(arc_conn), C.PAN_ERR_FAILED)
 						return
@@ -1368,7 +1351,7 @@ func PanConnReadViaAsync(
 					nn, path_, errrr := conn.ReadVia(buffer_out) // block here for new data
 					if errrr == nil {
 						// Data is available, signal the main caller
-						fmt.Println("read successfully completed out of band, invoking handler")
+						// read successfully completed out of band, invoking handler
 
 						if bytes_read_out != nil {
 							*(*C.int)(unsafe.Pointer(bytes_read_out)) = C.int(nn)
@@ -1383,7 +1366,7 @@ func PanConnReadViaAsync(
 						return
 
 					} else {
-						fmt.Println("Error reading out of band: ", errrr)
+						// Error reading out of band
 
 						var tt interface{ Timeout() bool }
 						if errors.As(errrr, &tt) {
@@ -1406,7 +1389,7 @@ func PanConnReadViaAsync(
 				// return Pending
 			} // if Timeout()
 		} else {
-			fmt.Println("Error on initial read:", err)
+			// Error on initial read
 			// return error  other than timeout
 			return C.PAN_ERR_FAILED
 		}
@@ -1488,9 +1471,8 @@ func PanConnWriteAsync(conn C.PanListenConn, buffer *C.cvoid_t, len C.int, n *C.
 		if true {
 
 			//if t.Timeout() {
-			if true {
+			if true { // write would block
 
-				fmt.Println("write would block")
 				// launch a go routine for non-blocking write
 
 				go func() {
@@ -1509,7 +1491,7 @@ func PanConnWriteAsync(conn C.PanListenConn, buffer *C.cvoid_t, len C.int, n *C.
 					out, e := conn.Write(send_buff)
 
 					if e == nil {
-						fmt.Println("write successfully completed out of band")
+						// write successfully completed out of band
 						if written != nil {
 							*(*C.int)(unsafe.Pointer(written)) = C.int(out)
 						}
@@ -1519,7 +1501,7 @@ func PanConnWriteAsync(conn C.PanListenConn, buffer *C.cvoid_t, len C.int, n *C.
 						if errors.As(e, &tt) {
 
 							if tt.Timeout() {
-								fmt.Println("async write timeout")
+								// async write timeout
 								C.InvokeCompletionWaker(completer, unsafe.Pointer(arc_conn), C.PAN_ERR_DEADLINE)
 								return
 							}
@@ -1553,7 +1535,7 @@ func PanConnWriteAsync(conn C.PanListenConn, buffer *C.cvoid_t, len C.int, n *C.
 
 	} else { // write completed immediately
 
-		fmt.Println("write completed immediately")
+		// write completed immediately
 		if n != nil {
 			*(*C.int)(unsafe.Pointer(n)) = C.int(written)
 		}
@@ -1627,7 +1609,7 @@ func PanConnWriteViaAsync(
 			//if t.Timeout() {
 			if true {
 
-				fmt.Println("write would block")
+				// write would block
 				// launch a go routine for non-blocking write
 
 				go func() {
@@ -1647,7 +1629,7 @@ func PanConnWriteViaAsync(
 					out, e := conn.WriteVia(to_path, send_buff)
 
 					if e == nil {
-						fmt.Println("write successfully completed out of band")
+						// write successfully completed out of band
 						if written != nil {
 							*(*C.int)(unsafe.Pointer(written)) = C.int(out)
 						}
@@ -1657,7 +1639,7 @@ func PanConnWriteViaAsync(
 						if errors.As(e, &tt) {
 
 							if tt.Timeout() {
-								fmt.Println("async write timeout")
+								// async write timeout
 								C.InvokeCompletionWaker(completer, unsafe.Pointer(arc_conn), C.PAN_ERR_DEADLINE)
 								return
 							}
@@ -1691,7 +1673,7 @@ func PanConnWriteViaAsync(
 
 	} else { // write completed immediately
 
-		fmt.Println("write completed immediately")
+		// write completed immediately
 		if n != nil {
 			*(*C.int)(unsafe.Pointer(n)) = C.int(written)
 		}

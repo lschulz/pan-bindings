@@ -843,7 +843,7 @@ where
         };
         _write_future
     } else if err == PAN_ERR_WOULDBLOCK {
-        println!("Go write returned WOULDBLOCK");
+        debug!("Go write returned WOULDBLOCK");
         /* return a WriteFuture that when polled:
 
         - is not instantly ready unless the completion_handler was called
@@ -857,7 +857,7 @@ where
         debug!("main go the lock");
         _write_future
     } else {
-        println!("Go write returned FAILURE ");
+        debug!("Go write returned FAILURE ");
         // there was a real error and we are screwed
         *this.lock().unwrap().get_write_state() = WriteState::Error(panError(err));
         _write_future
@@ -976,7 +976,7 @@ where
         debug!("main go the lock");
         _read_future
     } else {
-        println!("Go read returned FAILURE ");
+        debug!("Go read returned FAILURE ");
         // there was a real error and we are screwed
         *this.lock().unwrap().get_read_state() = ReadState::Error(panError(err));
         _read_future
