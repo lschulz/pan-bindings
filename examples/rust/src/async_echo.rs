@@ -60,8 +60,8 @@ impl Server {
             );
         }
         let mut rt = tokio::runtime::Runtime::new().unwrap();
-        // let mut recv_buff: [u8; 1024] = [0; 1024];
-        let mut recv_buff: Vec<u8> = vec![0; 1024];
+        // let mut recv_buff: [u8; 4096] = [0; 4096];
+        let mut recv_buff: Vec<u8> = vec![0; 4096];
         let mut path = Path::default();
         let mut from = Endpoint::default();
 
@@ -187,8 +187,8 @@ impl Client {
         unsafe {
             let mut rt = tokio::runtime::Runtime::new().unwrap();
             let mut path = Path::default();
-            //   let mut recv_buff: [u8; 1024] = [0; 1024];
-            let mut recv_buff: Vec<u8> = vec![0; 1024];
+            //   let mut recv_buff: [u8; 4096] = [0; 4096];
+            let mut recv_buff: Vec<u8> = vec![0; 4096];
 
             for _ in 0..args.count {
                 let write_block = async {
