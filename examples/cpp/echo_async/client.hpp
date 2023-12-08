@@ -40,6 +40,8 @@ public:
         using namespace std::placeholders;
         using asio::local::datagram_protocol;
 
+        count = args.count;
+
         auto tmp = fs::temp_directory_path();
         fs::path goSocketPath = tmp / "scion_async_client_go.sock";
         fs::path socketPath = tmp / "scion_async_client.sock";
@@ -83,12 +85,14 @@ private:
 
     void sent(const system::error_code& error, size_t bytes)
     {
+
         using namespace std::placeholders;
 
         if (error) {
             std::cerr << "ASIO error: " << error.message() << std::endl;
             return;
         }
+        ++msg_send;
 
         buffer.clear();
         buffer.resize(4096);
@@ -105,6 +109,11 @@ private:
         std::cout << "Received " << bytes << " bytes:\n";
         buffer.resize(bytes);
         printBuffer(std::cout, buffer) << '\n';
+
+        if (msg_send < count)
+        {
+            connected( boost::system::error_code( ) );
+        }
     }
 
 private:
@@ -113,6 +122,8 @@ private:
 
     asio::io_context ioContext;
     asio::local::datagram_protocol::socket socket;
+    int count;  // number of times to repeat the message
+    int msg_send = 0; // number of messages send so far
 
     std::vector<char> buffer;
 };

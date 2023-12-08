@@ -23,6 +23,7 @@ struct Arguments
     std::string localAddr;
     std::string remoteAddr;
     std::vector<char> message;
+    int count;
 };
 
 
