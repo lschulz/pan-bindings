@@ -675,10 +675,14 @@ where
     match _self.lock() {
         Ok(ref mut c) => match c.get_waker() {
             Some(ref mut w) => {
+                debug!("read handler calls waker");
                 w.clone().wake();
                 *c.get_waker() = None;
             }
-            None => {}
+            None => 
+            {
+                debug!("read handler found no waker to call");
+            }
         },
         Err(e) => {
             panic!("read handler cannot get lock on conn");
@@ -724,9 +728,11 @@ where
             }
         }
         PAN_ERR_DEADLINE => {
+            debug!("write handler experienced deadline timeout");
             *(&mut _self.lock().unwrap()).get_write_state() = WriteState::Error(panError(code));
         }
         PAN_ERR_FAILED => {
+            debug!("write handler failed ");
             *(&mut _self.lock().unwrap()).get_write_state() = WriteState::Error(panError(code));
         }
         _ => {}
@@ -739,10 +745,14 @@ where
     match _self.lock() {
         Ok(ref mut c) => match c.get_write_waker() {
             Some(ref mut w) => {
+                debug!("write handler calls write_waker");
                 w.clone().wake();
                 *c.get_write_waker() = None;
             }
-            None => {}
+            None => 
+            {
+                debug!("write handler didnt find waker");
+            }
         },
         Err(e) => {
             panic!("write handler cannot get lock on conn");
@@ -768,18 +778,18 @@ where
     let mut write_tout = 0;
 
     let mut _write_future: WriteFuture<C>;
-    {
+   // {
         let mut s = this.lock().unwrap();
         handle = s.get_handle();
         write_tout = *s.get_async_write_timeout();
-    }
+    // }
 
     _write_future = WriteFuture::<C>::new(this.clone());
 
     let ffn: Option<unsafe extern "C" fn(*mut std::ffi::c_void, PanError)> =
         Some(write_completer::<C>);
     let mut err: PanError = PAN_ERR_FAILED;
-
+    debug!("initiate write operation");
     if <C as IsSameType<ListenConn>>::IS_SAME_TYPE {
         if via.is_none() {
             err = PanListenConnWriteToAsync(
@@ -838,7 +848,8 @@ where
 
         // return a WriteFuture that is instantly Ready when polled
 
-        *this.lock().unwrap().get_write_state() = WriteState::ReadyWriting {
+       // *this.lock().unwrap().get_write_state()
+        *s.get_write_state() = WriteState::ReadyWriting {
             bytes_written: *_write_future.bytes_written as i32,
         };
         _write_future
@@ -851,15 +862,17 @@ where
 
         */
 
-        *this.lock().unwrap().get_write_state() = WriteState::WaitWrite {
+        // *this.lock().unwrap().get_write_state()
+        *s.get_write_state() = WriteState::WaitWrite {
             bytes_written: &mut *_write_future.bytes_written as *mut i32,
         };
-        debug!("main go the lock");
+        debug!("main got the lock");
         _write_future
     } else {
         debug!("Go write returned FAILURE ");
         // there was a real error and we are screwed
-        *this.lock().unwrap().get_write_state() = WriteState::Error(panError(err));
+        //*this.lock().unwrap().get_write_state()
+        *s.get_write_state() = WriteState::Error(panError(err));
         _write_future
     }
 }
@@ -906,17 +919,18 @@ where
     let mut read_tout = 0;
 
     let mut _read_future: ReadFuture<C>;
-    {
+    //{
         let mut s = this.lock().unwrap();
         handle = s.get_handle();
         read_tout = *s.get_async_read_timeout();
-    }
+    //}
 
     _read_future = ReadFuture::new(this.clone());
 
     let ffn: Option<unsafe extern "C" fn(*mut std::ffi::c_void, PanError)> =
         Some(read_completer::<C>);
 
+        debug!("initiate async_read operation ");
     let mut err: PanError = PAN_ERR_FAILED;
     if <C as IsSameType<ListenConn>>::IS_SAME_TYPE {
         err = PanListenConnReadFromAsyncVia(
@@ -951,7 +965,8 @@ where
 
         // return a ReadFuture that is instantly Ready when polled
 
-        *this.lock().unwrap().get_read_state() = ReadState::ReadyReading {
+       // *this.lock().unwrap().get_read_state()
+       *s.get_read_state() = ReadState::ReadyReading {
             buffer: recv_buffer as *mut Vec<u8>,
             from: _read_future.from,
             path: _read_future.path,
@@ -967,7 +982,8 @@ where
 
         */
 
-        *this.lock().unwrap().get_read_state() = ReadState::WaitReading {
+        //*this.lock().unwrap().get_read_state()
+        *s.get_read_state() = ReadState::WaitReading {
             buffer: recv_buffer as *mut Vec<u8>,
             from: &mut _read_future.from as *mut PanUDPAddr,
             path: &mut _read_future.path as *mut PanPath,
@@ -978,7 +994,8 @@ where
     } else {
         debug!("Go read returned FAILURE ");
         // there was a real error and we are screwed
-        *this.lock().unwrap().get_read_state() = ReadState::Error(panError(err));
+        //*this.lock().unwrap().get_read_state() 
+        *s.get_read_state() = ReadState::Error(panError(err));
         _read_future
     }
 }
