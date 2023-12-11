@@ -476,30 +476,30 @@ impl Future for WriteFuture {
     ) -> Poll<Result<i32, Box<dyn Error>>> {
         match &mut *self.state.clone().lock().unwrap() {
             WriteState::Initial => {
-                debug!("future_poll: found initial");
+                debug!("write_future_poll: found initial");
                 Poll::Pending
             }
 
             WriteState::Error(err) => {
-                debug!("future_poll: found error");
+                debug!("write_future_poll: found error");
                 Poll::Ready(Err(Box::new(err.clone())))
             }
 
             WriteState::ReadyWriting { bytes_written } => {
-                debug!("future_poll: found ready_reading");
+                debug!("write_future_poll: found ready_writing {}bytes",*bytes_written);
                 Poll::Ready(Ok(*bytes_written))
             }
             WriteState::WaitWrite {
                 bytes_written: _,
                 waker: ref mut w,
             } => {
-                debug!("future_poll: found wait_reading");
+                debug!("write_future_poll: found wait_writing");
                 // store the waker in the listen conn
                 // so the completion can wake us, once the result is available
                 unsafe {
                     *w = Some(cx.waker().clone());
                 }
-                debug!("future set waker");
+                debug!("write_future set waker");
 
                 Poll::Pending
             }
@@ -748,7 +748,7 @@ unsafe extern "C" fn write_completer(arc: *mut c_void, code: PanError) {
                             bytes_written: br,
                             waker: w,
                         } => {
-                            debug!("write_handler found state: wait_reading");
+                            debug!("write_handler found state: wait_write");
                             let ww = w.clone();
 
                             *c = WriteState::ReadyWriting {
@@ -770,10 +770,10 @@ unsafe extern "C" fn write_completer(arc: *mut c_void, code: PanError) {
                             // return; // dont call the waker
                         }
                         WriteState::Error(_) => {
-                            debug!("write handler found unexpected state: ReadReady");
+                            debug!("write handler found unexpected state: Error");
                         }
                         WriteState::ReadyWriting { .. } => {
-                            debug!("write_handler found unexpected state: Ready");
+                            debug!("write_handler found unexpected state: ReadyWriting");
                         }
                     };
                 }
@@ -792,7 +792,7 @@ unsafe extern "C" fn write_completer(arc: *mut c_void, code: PanError) {
                             bytes_written: br,
                             waker: w,
                         } => {
-                            debug!("write_handler found state: wait_reading");
+                            debug!("write_handler found state: wait_write");
                             let ww = w.clone();
 
                             *c = WriteState::Error(panError(code));
@@ -811,10 +811,10 @@ unsafe extern "C" fn write_completer(arc: *mut c_void, code: PanError) {
                             // return; // dont call the waker
                         }
                         WriteState::Error(_) => {
-                            debug!("write handler found unexpected state: ReadReady");
+                            debug!("write handler found unexpected state: Error");
                         }
                         WriteState::ReadyWriting { .. } => {
-                            debug!("write_handler found unexpected state: Ready");
+                            debug!("write_handler found unexpected state: ReadyWriting");
                         }
                     };
                 }
@@ -962,6 +962,7 @@ where
     let mut bytes_written: i32 = 0;
 
     while bytes_to_send > bytes_written {
+        debug!("async_write_impl: {}/{}", bytes_written, bytes_to_send);
         bytes_written += unsafe {
             async_write_some_impl::<C>(
                 this.clone(),

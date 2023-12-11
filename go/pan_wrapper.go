@@ -15,7 +15,11 @@
 package main
 
 // #cgo CFLAGS: -I../include
+// #ifdef BINDGEN
+// #include "pan_cdefs.h"
+// #else
 // #include "pan/pan_cdefs.h"
+// #endif
 // #define PAN_STREAM_HDR_SIZE 4
 // #define PAN_ADDR_HDR_SIZE 32
 // /** \file
@@ -615,56 +619,9 @@ func PanListenConnReadFromAsync(conn C.PanListenConn, buffer *C.void, len C.int,
 				// Read would block in non-blocking mode
 
 				// Launch a goroutine for non-blocking read
-				go func() {
-					buffer_out := p
-					conn := c
-					from_out := from
-					bytes_read_out := n
-					completion_waker := waker
 
-					//		if errr := conn.SetReadDeadline(time.Now().Add(time.Duration(timeout_duration) * time.Millisecond)); errr != nil {
-					if errr := conn.SetReadDeadline(time.Time{}); errr != nil {
-						// fmt.Println("Error setting read deadline:", errr)
-						// call waker with C.PAN_ERR_FAILED
-						C.InvokeCompletionWaker(completion_waker, unsafe.Pointer(arc_conn), C.PAN_ERR_FAILED)
-					}
+				chann01 <- tuple01{p, c, from, nil, n, waker, arc_conn}
 
-					nn, addr, errrr := conn.ReadFrom(buffer_out) // block here for new data
-					if errrr == nil {
-						// Data is available, signal the main caller
-						// read successfully completed out of band, invoking handler
-
-						if addr != nil {
-							*(*C.PanUDPAddr)(unsafe.Pointer(from_out)) = C.PanUDPAddr(cgo.NewHandle(addr))
-						}
-						if bytes_read_out != nil {
-							*(*C.int)(unsafe.Pointer(bytes_read_out)) = C.int(nn)
-						}
-
-						//  call waker with C.PAN_ERR_OK here
-						// notify the rust future, that the result is now available
-						C.InvokeCompletionWaker(completion_waker, unsafe.Pointer(arc_conn), C.PAN_ERR_OK)
-
-					} else {
-						// Error reading out of band
-
-						var tt interface{ Timeout() bool }
-						if errors.As(errrr, &tt) {
-							if t.Timeout() {
-								// call waker with C.PAN_ERR_DEADLINE here
-								// -> the callback on the rust side must transition the state according to ret-code
-								// and eventuall reschedule the rust future to be polled again
-								C.InvokeCompletionWaker(completion_waker, unsafe.Pointer(arc_conn), C.PAN_ERR_DEADLINE)
-							}
-						}
-
-						// check if error is timeout and return the right error code
-						// call waker with C.PAN_ERR_FAILED here
-						C.InvokeCompletionWaker(completion_waker, unsafe.Pointer(arc_conn), C.PAN_ERR_FAILED)
-					}
-				}()
-
-				////////////////////////////////////////////
 				return C.PAN_ERR_WOULDBLOCK
 				// return Pending
 			} // if Timeout()
@@ -691,6 +648,91 @@ func PanListenConnReadFromAsync(conn C.PanListenConn, buffer *C.void, len C.int,
 	return C.PAN_ERR_OK
 }
 
+type tuple01 struct {
+	buffer_out       []byte
+	conn             pan.ListenConn      // or ptr-to ?!
+	from_out         *C.PanUDPAddr       // *_Ctype_ulong
+	path_out         *C.PanPath          // *_Ctype_ulong
+	bytes_read_out   *C.int              // *_Ctype_int
+	completion_waker C.OnCompletionWaker // _Ctype_OnCompletionWaker
+	arc_conn         *C.void
+	// timeout has to go here
+}
+
+var chann01 chan tuple01
+
+func fcn01() {
+
+	for {
+		recv_op := <-chann01
+
+		buffer_out := recv_op.buffer_out
+		conn := recv_op.conn
+		from_out := recv_op.from_out
+		path_out := recv_op.path_out
+		bytes_read_out := recv_op.bytes_read_out
+		completion_waker := recv_op.completion_waker
+		arc_conn := recv_op.arc_conn
+
+		//		if errr := conn.SetReadDeadline(time.Now().Add(time.Duration(timeout_duration) * time.Millisecond)); errr != nil {
+		if errr := conn.SetReadDeadline(time.Time{}); errr != nil {
+			// fmt.Println("Error setting read deadline:", errr)
+			// call waker with C.PAN_ERR_FAILED
+			C.InvokeCompletionWaker(completion_waker, unsafe.Pointer(arc_conn), C.PAN_ERR_FAILED)
+			continue
+		}
+
+		var nn int
+		var addr pan.UDPAddr
+		var path_ *pan.Path
+		var errrr error
+		if path_out != nil {
+			nn, addr, path_, errrr = conn.ReadFromVia(buffer_out) // block here for new data
+		} else {
+			n, a, e := conn.ReadFrom(buffer_out)
+			nn, addr, errrr = n, a.(pan.UDPAddr), e
+		}
+
+		if errrr == nil {
+			// Data is available, signal the main caller
+			// read successfully completed out of band, invoking handler
+
+			if from_out != nil {
+				*(*C.PanUDPAddr)(unsafe.Pointer(from_out)) = C.PanUDPAddr(cgo.NewHandle(addr))
+			}
+			if bytes_read_out != nil {
+				*(*C.int)(unsafe.Pointer(bytes_read_out)) = C.int(nn)
+			}
+			if path_out != nil {
+				*(*C.PanPath)(unsafe.Pointer(path_out)) = C.PanPath(cgo.NewHandle(path_))
+			}
+
+			//  call waker with C.PAN_ERR_OK here
+			// notify the rust future, that the result is now available
+			C.InvokeCompletionWaker(completion_waker, unsafe.Pointer(arc_conn), C.PAN_ERR_OK)
+			continue
+
+		} else {
+			//fmt.Println("Error reading out of band: ", errrr)
+
+			var tt interface{ Timeout() bool }
+			if errors.As(errrr, &tt) {
+				if tt.Timeout() {
+					// call waker with C.PAN_ERR_DEADLINE here  -> the callback on the rust side must transition the state according to ret-code
+					// and eventuall reschedule the rust future to be polled again
+					C.InvokeCompletionWaker(completion_waker, unsafe.Pointer(arc_conn), C.PAN_ERR_DEADLINE)
+					continue
+				}
+			}
+
+			// check if error is timeout and return the right error code
+			// call waker with C.PAN_ERR_FAILED here
+			C.InvokeCompletionWaker(completion_waker, unsafe.Pointer(arc_conn), C.PAN_ERR_FAILED)
+		}
+
+	}
+}
+
 //export PanListenConnReadFromAsyncVia
 func PanListenConnReadFromAsyncVia(conn C.PanListenConn, buffer *C.void, len C.int, from *C.PanUDPAddr, path *C.PanPath, n *C.int, timeout_duration C.int, waker C.OnCompletionWaker, arc_conn *C.void) C.PanError {
 	c := cgo.Handle(conn).Value().(pan.ListenConn)
@@ -714,63 +756,10 @@ func PanListenConnReadFromAsyncVia(conn C.PanListenConn, buffer *C.void, len C.i
 			if t.Timeout() {
 				// Read would block in non-blocking mode
 
+				chann01 <- tuple01{p, c, from, path, n, waker, arc_conn}
+
 				// Launch a goroutine for non-blocking read
-				go func() {
-					buffer_out := p
-					conn := c
-					from_out := from
-					path_out := path
-					bytes_read_out := n
-					completion_waker := waker
 
-					//		if errr := conn.SetReadDeadline(time.Now().Add(time.Duration(timeout_duration) * time.Millisecond)); errr != nil {
-					if errr := conn.SetReadDeadline(time.Time{}); errr != nil {
-						// fmt.Println("Error setting read deadline:", errr)
-						// call waker with C.PAN_ERR_FAILED
-						C.InvokeCompletionWaker(completion_waker, unsafe.Pointer(arc_conn), C.PAN_ERR_FAILED)
-						return
-					}
-
-					nn, addr, path_, errrr := conn.ReadFromVia(buffer_out) // block here for new data
-					if errrr == nil {
-						// Data is available, signal the main caller
-						// read successfully completed out of band, invoking handler
-
-						if from_out != nil {
-							*(*C.PanUDPAddr)(unsafe.Pointer(from_out)) = C.PanUDPAddr(cgo.NewHandle(addr))
-						}
-						if bytes_read_out != nil {
-							*(*C.int)(unsafe.Pointer(bytes_read_out)) = C.int(nn)
-						}
-						if path_ != nil {
-							*(*C.PanPath)(unsafe.Pointer(path_out)) = C.PanPath(cgo.NewHandle(path_))
-						}
-
-						//  call waker with C.PAN_ERR_OK here
-						// notify the rust future, that the result is now available
-						C.InvokeCompletionWaker(completion_waker, unsafe.Pointer(arc_conn), C.PAN_ERR_OK)
-						return
-
-					} else {
-						//fmt.Println("Error reading out of band: ", errrr)
-
-						var tt interface{ Timeout() bool }
-						if errors.As(errrr, &tt) {
-							if t.Timeout() {
-								// call waker with C.PAN_ERR_DEADLINE here  -> the callback on the rust side must transition the state according to ret-code
-								// and eventuall reschedule the rust future to be polled again
-								C.InvokeCompletionWaker(completion_waker, unsafe.Pointer(arc_conn), C.PAN_ERR_DEADLINE)
-								return
-							}
-						}
-
-						// check if error is timeout and return the right error code
-						// call waker with C.PAN_ERR_FAILED here
-						C.InvokeCompletionWaker(completion_waker, unsafe.Pointer(arc_conn), C.PAN_ERR_FAILED)
-					}
-				}()
-
-				////////////////////////////////////////////
 				return C.PAN_ERR_WOULDBLOCK
 				// return Pending
 			} // if Timeout()
@@ -911,43 +900,8 @@ func PanListenConnWriteToAsync(
 			//if t.Timeout() {
 			if true {
 
-				// launch a go routine for non-blocking write
+				chann00 <- tuple00{p, addr, nil, n, waker, c, arc_conn}
 
-				go func() {
-					send_buff := p
-					to_addr := addr
-					written := n
-					completer := waker
-					conn := c
-
-					// set write timeout to 'timeout' here
-					/*	if errr := conn.SetWriteDeadline(time.Time{}); errr != nil {
-							C.InvokeCompletionWaker(completer, unsafe.Pointer(arc_conn), C.PAN_ERR_FAILED)
-							return
-						}
-					*/
-
-					out, e := conn.WriteTo(send_buff, to_addr)
-
-					if e == nil {
-						if written != nil {
-							*(*C.int)(unsafe.Pointer(written)) = C.int(out)
-						}
-						C.InvokeCompletionWaker(completer, unsafe.Pointer(arc_conn), C.PAN_ERR_OK)
-					} else {
-						var tt interface{ Timeout() bool }
-						if errors.As(e, &tt) {
-
-							if tt.Timeout() {
-								C.InvokeCompletionWaker(completer, unsafe.Pointer(arc_conn), C.PAN_ERR_DEADLINE)
-								return
-							}
-						}
-						C.InvokeCompletionWaker(completer, unsafe.Pointer(arc_conn), C.PAN_ERR_FAILED)
-						return
-					}
-
-				}()
 				return C.PAN_ERR_WOULDBLOCK
 			} else {
 				if errors.Is(err, os.ErrDeadlineExceeded) {
@@ -982,6 +936,70 @@ func PanListenConnWriteToAsync(
 	panic("unreachable")
 }
 
+type tuple00 struct {
+	send_buff []byte
+	to_addr   pan.UDPAddr // or pointer-to ?!
+	to_path   *pan.Path
+	written   *C.int
+	completer C.OnCompletionWaker
+	conn      pan.ListenConn // or pointer-to ?!
+	arc_conn  *C.void
+	// timeout also has to go here
+}
+
+var chann00 chan tuple00 //= make(chan tuple00)
+
+func fcn00() {
+
+	for {
+
+		// receive parameters for a write-operation
+		recv_operation := <-chann00
+
+		send_buff := recv_operation.send_buff
+		to_addr := recv_operation.to_addr
+		to_path := recv_operation.to_path
+		written := recv_operation.written
+		completer := recv_operation.completer
+		conn := recv_operation.conn
+		arc_conn := recv_operation.arc_conn
+
+		// set write timeout to 'timeout' here
+		/*	if errr := conn.SetWriteDeadline(time.Time{}); errr != nil {
+				C.InvokeCompletionWaker(completer, unsafe.Pointer(arc_conn), C.PAN_ERR_FAILED)
+				return
+			}
+		*/
+
+		var out int = 0
+		var e error
+		if to_path != nil {
+			out, e = conn.WriteToVia(send_buff, to_addr, to_path)
+		} else {
+			out, e = conn.WriteTo(send_buff, to_addr)
+		}
+
+		if e == nil { // write completed successfully out of band
+
+			if written != nil {
+				*(*C.int)(unsafe.Pointer(written)) = C.int(out)
+			}
+			C.InvokeCompletionWaker(completer, unsafe.Pointer(arc_conn), C.PAN_ERR_OK)
+		} else {
+			var tt interface{ Timeout() bool }
+			if errors.As(e, &tt) {
+
+				if tt.Timeout() { // async write timeout
+					C.InvokeCompletionWaker(completer, unsafe.Pointer(arc_conn), C.PAN_ERR_DEADLINE)
+					continue
+				}
+			}
+			C.InvokeCompletionWaker(completer, unsafe.Pointer(arc_conn), C.PAN_ERR_FAILED)
+
+		}
+	}
+}
+
 //export PanListenConnWriteToViaAsync
 func PanListenConnWriteToViaAsync(
 	conn C.PanListenConn, buffer *C.cvoid_t, len C.int, to C.PanUDPAddr, path C.PanPath, n *C.int, timeout C.int, waker C.OnCompletionWaker, arc_conn *C.void) C.PanError {
@@ -1011,45 +1029,10 @@ func PanListenConnWriteToViaAsync(
 
 			//if t.Timeout() {
 			if true {
-				// launch a go routine for non-blocking write
+				// dispatch a non-blocking write operation and pass along the required parameters
 
-				go func() {
-					send_buff := p
-					to_addr := addr
-					to_path := via
-					written := n
-					completer := waker
-					conn := c
+				chann00 <- tuple00{p, addr, via, n, waker, c, arc_conn}
 
-					// set write timeout to 'timeout' here
-					/*	if errr := conn.SetWriteDeadline(time.Time{}); errr != nil {
-							C.InvokeCompletionWaker(completer, unsafe.Pointer(arc_conn), C.PAN_ERR_FAILED)
-							return
-						}
-					*/
-
-					out, e := conn.WriteToVia(send_buff, to_addr, to_path)
-
-					if e == nil { // write completed successfully out of band
-
-						if written != nil {
-							*(*C.int)(unsafe.Pointer(written)) = C.int(out)
-						}
-						C.InvokeCompletionWaker(completer, unsafe.Pointer(arc_conn), C.PAN_ERR_OK)
-					} else {
-						var tt interface{ Timeout() bool }
-						if errors.As(e, &tt) {
-
-							if tt.Timeout() { // async write timeout
-								C.InvokeCompletionWaker(completer, unsafe.Pointer(arc_conn), C.PAN_ERR_DEADLINE)
-								return
-							}
-						}
-						C.InvokeCompletionWaker(completer, unsafe.Pointer(arc_conn), C.PAN_ERR_FAILED)
-						return
-					}
-
-				}()
 				return C.PAN_ERR_WOULDBLOCK
 			} else {
 				if errors.Is(err, os.ErrDeadlineExceeded) {
@@ -1309,6 +1292,83 @@ func PanConnReadVia(
 	return C.PAN_ERR_OK
 }
 
+type tuple02 struct {
+	buffer_out       []byte
+	conn             pan.Conn // or ptr-to ?!
+	path_out         *C.PanPath
+	bytes_read_out   *C.int
+	completion_waker C.OnCompletionWaker
+	arc_conn         *C.void
+	// add timeout here
+}
+
+var chann02 chan tuple02
+
+func fcn02() {
+
+	for {
+
+		recv_op := <-chann02
+		buffer_out := recv_op.buffer_out
+		conn := recv_op.conn
+		path_out := recv_op.path_out
+		bytes_read_out := recv_op.bytes_read_out
+		completion_waker := recv_op.completion_waker
+		arc_conn := recv_op.arc_conn
+
+		//		if errr := conn.SetReadDeadline(time.Now().Add(time.Duration(timeout_duration) * time.Millisecond)); errr != nil {
+		if errr := conn.SetReadDeadline(time.Time{}); errr != nil {
+			// fmt.Println("Error setting read deadline:", errr)
+			// call waker with C.PAN_ERR_FAILED
+			C.InvokeCompletionWaker(completion_waker, unsafe.Pointer(arc_conn), C.PAN_ERR_FAILED)
+			continue
+		}
+
+		var nn int
+		var path_ *pan.Path
+		var errrr error
+		if path_out != nil {
+			nn, path_, errrr = conn.ReadVia(buffer_out) // block here for new data
+		} else {
+			nn, errrr = conn.Read(buffer_out)
+		}
+
+		if errrr == nil {
+			// Data is available, signal the main caller
+			// read successfully completed out of band, invoking handler
+
+			if bytes_read_out != nil {
+				*(*C.int)(unsafe.Pointer(bytes_read_out)) = C.int(nn)
+			}
+			if path_ != nil {
+				*(*C.PanPath)(unsafe.Pointer(path_out)) = C.PanPath(cgo.NewHandle(path_))
+			}
+
+			//  call waker with C.PAN_ERR_OK here
+			// notify the rust future, that the result is now available
+			C.InvokeCompletionWaker(completion_waker, unsafe.Pointer(arc_conn), C.PAN_ERR_OK)
+			continue
+
+		} else {
+			// Error reading out of band
+
+			var tt interface{ Timeout() bool }
+			if errors.As(errrr, &tt) {
+				if tt.Timeout() {
+					// call waker with C.PAN_ERR_DEADLINE here  -> the callback on the rust side must transition the state according to ret-code
+					// and eventuall reschedule the rust future to be polled again
+					C.InvokeCompletionWaker(completion_waker, unsafe.Pointer(arc_conn), C.PAN_ERR_DEADLINE)
+					continue
+				}
+			}
+
+			// check if error is timeout and return the right error code
+			// call waker with C.PAN_ERR_FAILED here
+			C.InvokeCompletionWaker(completion_waker, unsafe.Pointer(arc_conn), C.PAN_ERR_FAILED)
+		}
+	}
+}
+
 //export PanConnReadViaAsync
 func PanConnReadViaAsync(
 	conn C.PanConn, buffer *C.void, len C.int, path *C.PanPath, n *C.int, timeout C.int, waker C.OnCompletionWaker, arc_conn *C.void) C.PanError {
@@ -1332,59 +1392,8 @@ func PanConnReadViaAsync(
 			if t.Timeout() {
 				// Read would block in non-blocking mode
 
-				// Launch a goroutine for non-blocking read
-				go func() {
-					buffer_out := p
-					conn := c
-					path_out := path
-					bytes_read_out := n
-					completion_waker := waker
+				chann02 <- tuple02{p, c, path, n, waker, arc_conn}
 
-					//		if errr := conn.SetReadDeadline(time.Now().Add(time.Duration(timeout_duration) * time.Millisecond)); errr != nil {
-					if errr := conn.SetReadDeadline(time.Time{}); errr != nil {
-						// fmt.Println("Error setting read deadline:", errr)
-						// call waker with C.PAN_ERR_FAILED
-						C.InvokeCompletionWaker(completion_waker, unsafe.Pointer(arc_conn), C.PAN_ERR_FAILED)
-						return
-					}
-
-					nn, path_, errrr := conn.ReadVia(buffer_out) // block here for new data
-					if errrr == nil {
-						// Data is available, signal the main caller
-						// read successfully completed out of band, invoking handler
-
-						if bytes_read_out != nil {
-							*(*C.int)(unsafe.Pointer(bytes_read_out)) = C.int(nn)
-						}
-						if path_ != nil {
-							*(*C.PanPath)(unsafe.Pointer(path_out)) = C.PanPath(cgo.NewHandle(path_))
-						}
-
-						//  call waker with C.PAN_ERR_OK here
-						// notify the rust future, that the result is now available
-						C.InvokeCompletionWaker(completion_waker, unsafe.Pointer(arc_conn), C.PAN_ERR_OK)
-						return
-
-					} else {
-						// Error reading out of band
-
-						var tt interface{ Timeout() bool }
-						if errors.As(errrr, &tt) {
-							if t.Timeout() {
-								// call waker with C.PAN_ERR_DEADLINE here  -> the callback on the rust side must transition the state according to ret-code
-								// and eventuall reschedule the rust future to be polled again
-								C.InvokeCompletionWaker(completion_waker, unsafe.Pointer(arc_conn), C.PAN_ERR_DEADLINE)
-								return
-							}
-						}
-
-						// check if error is timeout and return the right error code
-						// call waker with C.PAN_ERR_FAILED here
-						C.InvokeCompletionWaker(completion_waker, unsafe.Pointer(arc_conn), C.PAN_ERR_FAILED)
-					}
-				}()
-
-				////////////////////////////////////////////
 				return C.PAN_ERR_WOULDBLOCK
 				// return Pending
 			} // if Timeout()
@@ -1395,7 +1404,7 @@ func PanConnReadViaAsync(
 		}
 	} else {
 		// Read successful
-		fmt.Printf("Read %d bytes: %s\n", n, buffer[:read])
+		//fmt.Printf("Read %d bytes: %s\n", n, p[:read])
 
 		if n != nil {
 			*(*C.int)(unsafe.Pointer(n)) = C.int(read)
@@ -1447,6 +1456,68 @@ func PanConnWrite(conn C.PanListenConn, buffer *C.cvoid_t, len C.int, n *C.int) 
 	return C.PAN_ERR_OK
 }
 
+type tuple03 struct {
+	send_buff []byte
+	written   *C.int
+	to_path   *pan.Path
+	completer C.OnCompletionWaker
+	conn      pan.Conn
+	arc_conn  *C.void
+}
+
+var chann03 chan tuple03
+
+func fcn03() {
+	for {
+
+		recv_op := <-chann03
+
+		send_buff := recv_op.send_buff
+		written := recv_op.written
+		to_path := recv_op.to_path
+		completer := recv_op.completer
+		conn := recv_op.conn
+		arc_conn := recv_op.arc_conn
+
+		// set write timeout to 'timeout' here
+		/*	if errr := conn.SetWriteDeadline(time.Time{}); errr != nil {
+				C.InvokeCompletionWaker(completer, unsafe.Pointer(arc_conn), C.PAN_ERR_FAILED)
+				return
+			}
+		*/
+
+		var out int = 0
+		var e error
+
+		if to_path == nil {
+			out, e = conn.Write(send_buff)
+		} else {
+			out, e = conn.WriteVia(to_path, send_buff)
+		}
+
+		if e == nil {
+			// write successfully completed out of band
+			if written != nil {
+				*(*C.int)(unsafe.Pointer(written)) = C.int(out)
+			}
+			C.InvokeCompletionWaker(completer, unsafe.Pointer(arc_conn), C.PAN_ERR_OK)
+		} else {
+			var tt interface{ Timeout() bool }
+			if errors.As(e, &tt) {
+
+				if tt.Timeout() {
+					// async write timeout
+					C.InvokeCompletionWaker(completer, unsafe.Pointer(arc_conn), C.PAN_ERR_DEADLINE)
+					continue
+				}
+			}
+			C.InvokeCompletionWaker(completer, unsafe.Pointer(arc_conn), C.PAN_ERR_FAILED)
+			continue
+		}
+
+	}
+}
+
 //export PanConnWriteAsync
 func PanConnWriteAsync(conn C.PanListenConn, buffer *C.cvoid_t, len C.int, n *C.int, timeout C.int, waker C.OnCompletionWaker, arc_conn *C.void) C.PanError {
 	c := cgo.Handle(conn).Value().(pan.Conn)
@@ -1473,44 +1544,9 @@ func PanConnWriteAsync(conn C.PanListenConn, buffer *C.cvoid_t, len C.int, n *C.
 			//if t.Timeout() {
 			if true { // write would block
 
+				chann03 <- tuple03{p, n, nil, waker, c, arc_conn}
 				// launch a go routine for non-blocking write
 
-				go func() {
-					send_buff := p
-					written := n
-					completer := waker
-					conn := c
-
-					// set write timeout to 'timeout' here
-					/*	if errr := conn.SetWriteDeadline(time.Time{}); errr != nil {
-							C.InvokeCompletionWaker(completer, unsafe.Pointer(arc_conn), C.PAN_ERR_FAILED)
-							return
-						}
-					*/
-
-					out, e := conn.Write(send_buff)
-
-					if e == nil {
-						// write successfully completed out of band
-						if written != nil {
-							*(*C.int)(unsafe.Pointer(written)) = C.int(out)
-						}
-						C.InvokeCompletionWaker(completer, unsafe.Pointer(arc_conn), C.PAN_ERR_OK)
-					} else {
-						var tt interface{ Timeout() bool }
-						if errors.As(e, &tt) {
-
-							if tt.Timeout() {
-								// async write timeout
-								C.InvokeCompletionWaker(completer, unsafe.Pointer(arc_conn), C.PAN_ERR_DEADLINE)
-								return
-							}
-						}
-						C.InvokeCompletionWaker(completer, unsafe.Pointer(arc_conn), C.PAN_ERR_FAILED)
-						return
-					}
-
-				}()
 				return C.PAN_ERR_WOULDBLOCK
 			} else {
 				if errors.Is(err, os.ErrDeadlineExceeded) {
@@ -1544,6 +1580,20 @@ func PanConnWriteAsync(conn C.PanListenConn, buffer *C.cvoid_t, len C.int, n *C.
 	}
 
 	panic("unreachable")
+}
+
+func init() {
+	fmt.Println("INIT CALLED")
+
+	chann00 = make(chan tuple00, 1)
+	chann01 = make(chan tuple01, 1)
+	chann02 = make(chan tuple02, 1)
+	chann03 = make(chan tuple03, 1)
+
+	go fcn00()
+	go fcn01()
+	go fcn02()
+	go fcn03()
 }
 
 /**
@@ -1611,44 +1661,8 @@ func PanConnWriteViaAsync(
 
 				// write would block
 				// launch a go routine for non-blocking write
+				chann03 <- tuple03{p, n, via, waker, c, arc_conn}
 
-				go func() {
-					send_buff := p
-					to_path := via
-					written := n
-					completer := waker
-					conn := c
-
-					// set write timeout to 'timeout' here
-					/*	if errr := conn.SetWriteDeadline(time.Time{}); errr != nil {
-							C.InvokeCompletionWaker(completer, unsafe.Pointer(arc_conn), C.PAN_ERR_FAILED)
-							return
-						}
-					*/
-
-					out, e := conn.WriteVia(to_path, send_buff)
-
-					if e == nil {
-						// write successfully completed out of band
-						if written != nil {
-							*(*C.int)(unsafe.Pointer(written)) = C.int(out)
-						}
-						C.InvokeCompletionWaker(completer, unsafe.Pointer(arc_conn), C.PAN_ERR_OK)
-					} else {
-						var tt interface{ Timeout() bool }
-						if errors.As(e, &tt) {
-
-							if tt.Timeout() {
-								// async write timeout
-								C.InvokeCompletionWaker(completer, unsafe.Pointer(arc_conn), C.PAN_ERR_DEADLINE)
-								return
-							}
-						}
-						C.InvokeCompletionWaker(completer, unsafe.Pointer(arc_conn), C.PAN_ERR_FAILED)
-						return
-					}
-
-				}()
 				return C.PAN_ERR_WOULDBLOCK
 			} else {
 				if errors.Is(err, os.ErrDeadlineExceeded) {
