@@ -7,11 +7,12 @@ include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
 use std::ops::Deref;
 use std::ptr::null;
 use std::rc::Rc;
-
+use std::any::Any; 
 use futures::future::{Future, TryFutureExt};
 use std::convert::TryInto;
 use std::ffi::CStr;
 use std::fmt;
+use std::str::FromStr;
 use std::future::*;
 use std::io::{self, Bytes};
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
@@ -20,10 +21,15 @@ use std::str;
 use std::sync::{Arc, Mutex};
 use std::task::{Context, Poll, Waker};
 use std::time::Duration;
+extern crate snet;
+use snet::*;
 extern crate tokio;
 use async_recursion::async_recursion;
 use log::*;
 use tokio::io::{AsyncRead, AsyncReadExt};
+
+mod bindings;
+//pub use self::bindings::PanUDPAddr;
 
 //extern crate typenum;
 //use typenum::Same;
@@ -211,7 +217,7 @@ impl GoHandleOwner for Path {
     }
 }
 
-pub trait PathPolicy: GoHandleOwner {
+pub trait PathPolicy: GoHandleOwner +Send +fmt::Debug{
     fn cb_filter(self: &mut Self, paths: *const usize, count: usize, user: usize) -> usize;
     /*
      using PathTag = std::uintptr_t;
@@ -220,7 +226,7 @@ pub trait PathPolicy: GoHandleOwner {
      */
 }
 
-pub trait PathSelector: GoHandleOwner {
+pub trait PathSelector: GoHandleOwner  +Send +fmt::Debug{
     // Callbacks for Go
     fn cb_path(self: &mut Self, user: c_uint) -> c_uint;
     fn cb_initialize(
@@ -243,7 +249,7 @@ pub trait PathSelector: GoHandleOwner {
     */
 }
 
-pub trait ReplySelector: GoHandleOwner +Send{
+pub trait ReplySelector: GoHandleOwner +Send + fmt::Debug{
     // fn new() -> Self;
     // the c++ version has no self parameter. But rust apparently needs this
     // to allow for Box<dyn ReplySelector>  to compile
@@ -275,7 +281,57 @@ impl Default for Endpoint {
     }
 }
 
+impl Into<snet::SocketAddr> for Endpoint
+{
+    fn into(self) -> snet::SocketAddr {
+        snet::SocketAddr::SCION(
+             SocketAddrScion::new1(
+                ScionAddr::new1(self.get_isd(),
+                 self.get_asn(),
+                  self.get_ip().into()),
+                   self.get_port()))
+    }
+}
+
+impl From<snet::SocketAddrScion> for Endpoint
+{
+fn from( addr: snet::SocketAddrScion ) ->Endpoint
+{
+<Self as FromStr>::from_str(&addr.to_string()).unwrap()
+}
+}
+
+impl From<snet::SocketAddr> for Endpoint
+{
+fn from( addr: snet::SocketAddr ) ->Endpoint
+{
+<Self as FromStr>::from_str(&addr.to_string()).unwrap()
+}
+}
+
+
+impl FromStr for Endpoint
+{
+    type Err = panError;
+    fn from_str(s: &str) ->Result<Endpoint,Self::Err>
+    {
+        unsafe{resolve_udp_addr(s)}
+    }
+}
+
+
 impl Endpoint {
+
+    pub fn get_isd(&self)->u16
+    {
+        isd_from_ia(self.get_ia())
+    }
+
+    pub fn get_asn(&self) -> u64
+    {
+        as_from_ia( self.get_ia())
+    }
+
     pub fn new(handle: Pan_GoHandle) -> Endpoint {
         Self { h: handle }
     }
@@ -337,7 +393,7 @@ impl GoHandleOwner for Endpoint {
 
 use std::error::Error;
 
-pub unsafe fn resolve_udp_addr(address: &str) -> Result<Endpoint, Box<dyn Error>> {
+pub unsafe fn resolve_udp_addr(address: &str) -> Result<Endpoint, panError> {
     let mut h: Pan_GoHandle = Default::default();
     let err: PanError = PanResolveUDPAddr(
         address.as_ptr() as *const ::std::os::raw::c_char,
@@ -347,7 +403,7 @@ pub unsafe fn resolve_udp_addr(address: &str) -> Result<Endpoint, Box<dyn Error>
     if err == 0 {
         Ok(Endpoint::new(h))
     } else {
-        Err(Box::new(panError(err)))
+        Err(panError(err))
     }
 }
 
@@ -394,9 +450,10 @@ impl GoHandleOwner for ListenSockAdapter {
     }
 }
 
+#[derive(Debug)]
 pub struct ListenConn {
     h: Pan_GoHandle,
-    selector: Option<Box<dyn ReplySelector>>,
+    selector: Option<Box<dyn ReplySelector+ Send + Sync>>,
 
     mtx_read: Arc<Mutex<ReadState>>,
     mtx_write: Arc<Mutex<WriteState>>,
@@ -448,7 +505,7 @@ impl Default for ListenConn {
         }
     }
 }
-
+#[derive(Debug)]
 enum WriteState {
     Initial,
     Error(panError),
@@ -477,6 +534,19 @@ impl WriteFuture {
         }
     }
 }
+
+/*
+pub trait TryFuture: Future + Sealed {
+    type Ok;
+    type Error;
+
+    // Required method
+    fn try_poll(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>
+    ) -> Poll<Result<Self::Ok, Self::Error>>;
+}
+ */
 
 impl Future for WriteFuture {
     type Output = Result<i32, panError>;
@@ -521,11 +591,12 @@ impl Future for WriteFuture {
     }
 }
 
+#[derive(Debug)]
 enum ReadState {
     Initial,
     WaitReading {
         // completion has not yet been called
-        buffer: *mut Vec<u8>,
+      //  buffer: *mut Vec<u8>,
         bytes_read: *mut i32,
         from: *mut PanUDPAddr,
         path: *mut PanPath,
@@ -533,7 +604,7 @@ enum ReadState {
         waker: Option<Waker>,
     },
     ReadyReading {
-        buffer: *mut Vec<u8>,
+       // buffer: *mut Vec<u8>,
         bytes_read: i32,
         from: PanUDPAddr,
         path: PanPath,
@@ -607,7 +678,7 @@ impl Future for ReadFuture {
             }
 
             ReadState::ReadyReading {
-                buffer: _,
+                // buffer: _,
                 from,
                 path,
                 bytes_read,
@@ -618,7 +689,7 @@ impl Future for ReadFuture {
                 Poll::Ready(Ok((bytes_read, from, path)))
             }
             ReadState::WaitReading {
-                buffer: _,
+                // buffer: _,
                 from: _,
                 path: _,
                 waker: ref mut w,
@@ -651,7 +722,7 @@ unsafe extern "C" fn read_completer(arc: *mut c_void, code: PanError) {
                     match &mut *c {
                         ReadState::WaitReading {
                             bytes_read: br,
-                            buffer: bu,
+                           //  buffer: bu,
                             from: fr,
                             path: p,
                             waker: w,
@@ -668,7 +739,7 @@ unsafe extern "C" fn read_completer(arc: *mut c_void, code: PanError) {
                             }
                             *c = ReadState::ReadyReading {
                                 bytes_read: **br,
-                                buffer: bu.clone(),
+                                //buffer: bu.clone(),
                                 path: **p,
                                 from: **fr,
                             };
@@ -706,7 +777,7 @@ unsafe extern "C" fn read_completer(arc: *mut c_void, code: PanError) {
                     match &mut *c {
                         ReadState::WaitReading {
                             bytes_read: br,
-                            buffer: bu,
+                            //buffer: bu,
                             from: fr,
                             path: p,
                             waker: w,
@@ -1005,6 +1076,7 @@ async unsafe fn recursive_write<C>(
     bytes_written: usize,
     bytes_to_send: usize,
 ) where
+C: Sync,
     C: Send,
     C: Connection,
     C: IsSameType<Conn>,
@@ -1047,9 +1119,10 @@ async unsafe fn recursive_write<C>(
     send_buff: &'a [u8],
     to: PanUDPAddr,
     via: Option<PanPath>,
-) -> std::pin::Pin<Box<dyn futures::Future<Output = ()> + std::marker::Send + 'a>>
+) -> std::pin::Pin<Box<dyn futures::Future<Output = ()> + std::marker::Send + Sync+ 'a>>
 where
     C: Send,
+    C:Sync,
     C: 'a,
     C: Connection,
     C: IsSameType<Conn>,
@@ -1061,9 +1134,12 @@ where
 // actuall async_read_some_impl
 unsafe fn async_read_impl<'b, C>(
     this: Arc<Mutex<C>>,
-    recv_buffer: &'b mut Vec<u8>, //  from: & mut PanUDPAddr,
+   // recv_buffer: &'b mut Vec<u8>, //  from: & mut PanUDPAddr,
+   buff: &'b mut [u8]
 ) -> ReadFuture
 where
+// B: Into<&'b mut [u8]>,
+// &'b mut [u8]: From<&'b mut B>,
     C: Connection,
     C: IsSameType<ListenConn>,
     C: IsSameType<Conn>,
@@ -1091,11 +1167,14 @@ where
 
     debug!("initiate async_read operation ");
     let mut err: PanError = PAN_ERR_FAILED;
+
+
+
     if <C as IsSameType<ListenConn>>::IS_SAME_TYPE {
         err = PanListenConnReadFromAsyncVia(
             handle,
-            recv_buffer.as_mut_ptr() as *mut c_void,
-            recv_buffer.len() as i32,
+            buff.as_mut_ptr() as *mut c_void,
+            buff.len() as i32,
             f,
             p,
             b,
@@ -1107,8 +1186,8 @@ where
     } else if <C as IsSameType<Conn>>::IS_SAME_TYPE {
         err = PanConnReadViaAsync(
             handle,
-            recv_buffer.as_mut_ptr() as *mut c_void,
-            recv_buffer.len() as i32,
+            buff.as_mut_ptr() as *mut c_void,
+            buff.len() as i32,
             p,
             b,
             read_tout,
@@ -1131,7 +1210,7 @@ where
         // return a ReadFuture that is instantly Ready when polled
 
         *lck = ReadState::ReadyReading {
-            buffer: recv_buffer as *mut Vec<u8>,
+            // buffer: recv_buffer as *mut Vec<u8>,
             from: *_read_future.from,
             path: *_read_future.path,
             bytes_read: *_read_future.bytes as i32,
@@ -1147,7 +1226,7 @@ where
         */
 
         *lck = ReadState::WaitReading {
-            buffer: recv_buffer as *mut Vec<u8>,
+         //   buffer: recv_buffer as *mut Vec<u8>,
             from: f,
             path: p,
             bytes_read: b,
@@ -1296,10 +1375,10 @@ impl ListenConn {
         }
     }
 
-    pub unsafe fn get_local_endpoint(&self) -> Endpoint {
-        Endpoint::new(Pan_GoHandle::new1(
+    pub fn get_local_endpoint(&self) -> Endpoint {
+unsafe{        Endpoint::new(Pan_GoHandle::new1(
             PanListenConnLocalAddr(self.get_handle()) as u64,
-        ))
+        ))}
     }
 
     pub unsafe fn read(self: &mut Self, buffer: &mut [u8]) -> Result<i32, Box<dyn Error>> {
@@ -1506,11 +1585,11 @@ impl GoHandleOwner for ConnSockAdapter {
         prt
     }
 }
-
+#[derive(Debug)]
 pub struct Conn {
     h: Pan_GoHandle,
-    policy: Option<Box<dyn PathPolicy>>,
-    selector: Option<Box<dyn PathSelector>>,
+    policy: Option<Box<dyn PathPolicy +Sync +Send>>,
+    selector: Option<Box<dyn PathSelector + Sync +Send>>,
 
     mtx_read: Arc<Mutex<ReadState>>,
     mtx_write: Arc<Mutex<WriteState>>,
@@ -1565,6 +1644,13 @@ impl Conn {
     ) -> Result<i32, panError> {
         unsafe { async_write_some_impl::<Conn>(this, send_buff, 0, None).await }
     }
+    pub async fn async_write_some_via(
+        this: Arc<Mutex<Conn>>,
+        send_buff: &Vec<u8>,
+        via: PanPath,
+    ) -> Result<i32, panError> {
+        unsafe { async_write_some_impl::<Conn>(this, send_buff, 0, Some(via)).await }
+    }
 
     pub async fn async_write(
         this: Arc<Mutex<Conn>>,
@@ -1581,13 +1667,22 @@ impl Conn {
         async_write_impl::<Conn>(this, send_buff, 0, Some(via)).await
     }
 
-    pub async fn async_write_some_via(
+    pub async fn async_write2<'a>(
         this: Arc<Mutex<Conn>>,
-        send_buff: &Vec<u8>,
-        via: PanPath,
-    ) -> Result<i32, panError> {
-        unsafe { async_write_some_impl::<Conn>(this, send_buff, 0, Some(via)).await }
+        send_buff: &'a [u8],        
+    ) -> std::pin::Pin<Box<dyn futures::Future<Output = ()> + std::marker::Send + Sync+'a>>
+    {
+        async_write_impl2::<Conn>(this, send_buff, 0, None).await
     }
+
+    pub async fn async_write_via2<'a>(
+        this: Arc<Mutex<Conn>>,
+        send_buff: &'a[u8],        
+        via: PanPath,
+    ) -> std::pin::Pin<Box<dyn futures::Future<Output = ()> + std::marker::Send + 'a>>{
+        async_write_impl2::<Conn>(this, send_buff,0, Some(via)).await
+    }
+
 
     // actually async_read_some
     pub async fn async_read(
@@ -1598,6 +1693,11 @@ impl Conn {
             Ok((i32, _, _)) => Ok(i32),
             Err(e) => Err(e),
         }
+    }
+
+    pub fn async_read2(this:Arc<Mutex<Conn>>, recv_buf: &mut [u8] ) ->ReadFuture
+    {
+        unsafe { async_read_impl::<Conn>(this, recv_buf) }
     }
 
     // actually async_read_some_via
