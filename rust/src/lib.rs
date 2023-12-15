@@ -4,20 +4,20 @@
 
 include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
 
-use std::ops::Deref;
-use std::ptr::null;
-use std::rc::Rc;
-use std::any::Any; 
 use futures::future::{Future, TryFutureExt};
+use std::any::Any;
 use std::convert::TryInto;
 use std::ffi::CStr;
 use std::fmt;
-use std::str::FromStr;
 use std::future::*;
 use std::io::{self, Bytes};
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
+use std::ops::Deref;
 use std::pin::*;
+use std::ptr::null;
+use std::rc::Rc;
 use std::str;
+use std::str::FromStr;
 use std::sync::{Arc, Mutex};
 use std::task::{Context, Poll, Waker};
 use std::time::Duration;
@@ -177,17 +177,26 @@ impl Path {
     }
 
     pub unsafe fn to_string(&self) -> String {
+        if !self.is_valid() {
+            panic!(" attempt to invoke method on invalid Path ");
+        }
         let c_str = CStr::from_ptr(PanPathToString(self.get_handle()));
         c_str.to_string_lossy().into_owned()
     }
 
     pub unsafe fn get_fingerprint(&self) -> PathFingerprint {
+        if !self.is_valid() {
+            panic!(" attempt to invoke method on invalid Path ");
+        }
         PathFingerprint::new(Pan_GoHandle::new1(
             PanPathGetFingerprint(self.get_handle()) as u64
         ))
     }
 
     pub unsafe fn contains_interface(&self, iface: &PathInterface) -> bool {
+        if !self.is_valid() {
+            panic!(" attempt to invoke method on invalid Path ");
+        }
         PanPathContainsInterface(self.get_handle(), iface.get_handle()) != 0
     }
 }
@@ -217,7 +226,7 @@ impl GoHandleOwner for Path {
     }
 }
 
-pub trait PathPolicy: GoHandleOwner +Send +fmt::Debug{
+pub trait PathPolicy: GoHandleOwner + Send + fmt::Debug {
     fn cb_filter(self: &mut Self, paths: *const usize, count: usize, user: usize) -> usize;
     /*
      using PathTag = std::uintptr_t;
@@ -226,7 +235,7 @@ pub trait PathPolicy: GoHandleOwner +Send +fmt::Debug{
      */
 }
 
-pub trait PathSelector: GoHandleOwner  +Send +fmt::Debug{
+pub trait PathSelector: GoHandleOwner + Send + fmt::Debug {
     // Callbacks for Go
     fn cb_path(self: &mut Self, user: c_uint) -> c_uint;
     fn cb_initialize(
@@ -249,7 +258,7 @@ pub trait PathSelector: GoHandleOwner  +Send +fmt::Debug{
     */
 }
 
-pub trait ReplySelector: GoHandleOwner +Send + fmt::Debug{
+pub trait ReplySelector: GoHandleOwner + Send + fmt::Debug {
     // fn new() -> Self;
     // the c++ version has no self parameter. But rust apparently needs this
     // to allow for Box<dyn ReplySelector>  to compile
@@ -281,8 +290,7 @@ impl Default for Endpoint {
     }
 }
 
-impl Into<snet::SocketAddr> for Endpoint
-{
+impl Into<snet::SocketAddr> for Endpoint {
     /* 19-ffaa:1:1094,127.0.0.1:37227 -> 37904-100a:aff1:300,127.0.0.1:37227
     fn into(self) -> snet::SocketAddr {
         snet::SocketAddr::SCION(
@@ -294,75 +302,58 @@ impl Into<snet::SocketAddr> for Endpoint
     }
     */
 
-
     fn into(self) -> snet::SocketAddr {
         unsafe {
-            if !self.is_valid() 
-{ panic!("cannot convert invalid panEndpoint to SocketAddr ");
-}
+            if !self.is_valid() {
+                panic!("cannot convert invalid panEndpoint to SocketAddr ");
+            }
 
-        snet::SocketAddr::SCION(
-
-            <snet::SocketAddrScion as FromStr>::from_str( &self.to_string() ).unwrap()
-
-        ) 
+            snet::SocketAddr::SCION(
+                <snet::SocketAddrScion as FromStr>::from_str(&self.to_string()).unwrap(),
+            )
+        }
     }
 }
+
+impl From<snet::SocketAddrScion> for Endpoint {
+    fn from(addr: snet::SocketAddrScion) -> Endpoint {
+        <Self as FromStr>::from_str(&addr.to_string()).unwrap()
+    }
 }
 
-impl From<snet::SocketAddrScion> for Endpoint
-{
-fn from( addr: snet::SocketAddrScion ) ->Endpoint
-{
-<Self as FromStr>::from_str(&addr.to_string()).unwrap()
-}
+impl From<snet::SocketAddr> for Endpoint {
+    fn from(addr: snet::SocketAddr) -> Endpoint {
+        <Self as FromStr>::from_str(&addr.to_string()).unwrap()
+    }
 }
 
-impl From<snet::SocketAddr> for Endpoint
-{
-fn from( addr: snet::SocketAddr ) ->Endpoint
-{
-<Self as FromStr>::from_str(&addr.to_string()).unwrap()
-}
-}
-
-
-impl FromStr for Endpoint
-{
+impl FromStr for Endpoint {
     type Err = panError;
-    fn from_str(s: &str) ->Result<Endpoint,Self::Err>
-    {
+    fn from_str(s: &str) -> Result<Endpoint, Self::Err> {
         resolve_udp_addr(s)
     }
 }
 
-
 impl Endpoint {
-
-    pub fn get_isd(&self)->u16
-    {
+    pub fn get_isd(&self) -> u16 {
         isd_from_ia(self.get_ia())
     }
 
-    pub fn get_asn(&self) -> u64
-    {
-        as_from_ia( self.get_ia())
+    pub fn get_asn(&self) -> u64 {
+        as_from_ia(self.get_ia())
     }
 
     pub fn new(handle: Pan_GoHandle) -> Endpoint {
         Self { h: handle }
     }
 
-    pub fn new1( addr: &str ) ->Endpoint{
-
-       resolve_udp_addr(addr).unwrap()
-
+    pub fn new1(addr: &str) -> Endpoint {
+        resolve_udp_addr(addr).unwrap()
     }
 
     pub fn to_string(&self) -> String {
         unsafe {
-            if !self.is_valid()
-            {
+            if !self.is_valid() {
                 panic!(" attempt to invoke method on invalid Endpoint ");
             }
             let c_string_ptr = PanUDPAddrToString(self.get_handle());
@@ -374,6 +365,9 @@ impl Endpoint {
 
     pub fn get_ia(&self) -> u64 {
         unsafe {
+            if !self.is_valid() {
+                panic!(" attempt to invoke method on invalid Endpoint ");
+            }
             let mut ia: u64 = 0;
             PanUDPAddrGetIA(self.get_handle(), &mut ia as *mut u64);
 
@@ -383,6 +377,9 @@ impl Endpoint {
 
     pub fn get_ip(&self) -> IpAddr {
         unsafe {
+            if !self.is_valid() {
+                panic!(" attempt to invoke method on invalid Endpoint ");
+            }
             if PanUDPAddrIsIPv6(self.get_handle()) != 0 {
                 let mut ipv6_bytes: [u8; 16] = [0; 16];
                 PanUDPAddrGetIPv6(self.get_handle(), ipv6_bytes.as_mut_ptr());
@@ -397,7 +394,12 @@ impl Endpoint {
     }
 
     pub fn get_port(&self) -> u16 {
-        unsafe { PanUDPAddrGetPort(self.get_handle()) }
+        unsafe {
+            if !self.is_valid() {
+                panic!(" attempt to invoke method on invalid Endpoint ");
+            }
+            PanUDPAddrGetPort(self.get_handle())
+        }
     }
 }
 
@@ -422,19 +424,19 @@ use std::error::Error;
 
 pub fn resolve_udp_addr(address: &str) -> Result<Endpoint, panError> {
     unsafe {
-    let mut h: Pan_GoHandle = Default::default();
-    let err: PanError = PanResolveUDPAddrN(
-        address.as_ptr() as *const ::std::os::raw::c_char,
-        address.len() as i32,
-        h.resetAndGetAddressOf() as *mut PanUDPAddr,
-    );
+        let mut h: Pan_GoHandle = Default::default();
+        let err: PanError = PanResolveUDPAddrN(
+            address.as_ptr() as *const ::std::os::raw::c_char,
+            address.len() as i32,
+            h.resetAndGetAddressOf() as *mut PanUDPAddr,
+        );
 
-    if err == 0 {
-        Ok(Endpoint::new(h))
-    } else {
-        Err(panError(err))
+        if err == 0 {
+            Ok(Endpoint::new(h))
+        } else {
+            Err(panError(err))
+        }
     }
-}
 }
 
 //} mod udp
@@ -483,7 +485,7 @@ impl GoHandleOwner for ListenSockAdapter {
 #[derive(Debug)]
 pub struct ListenConn {
     h: Pan_GoHandle,
-    selector: Option<Box<dyn ReplySelector+ Send + Sync>>,
+    selector: Option<Box<dyn ReplySelector + Send + Sync>>,
 
     mtx_read: Arc<Mutex<ReadState>>,
     mtx_write: Arc<Mutex<WriteState>>,
@@ -581,10 +583,7 @@ pub trait TryFuture: Future + Sealed {
 impl Future for WriteFuture {
     type Output = Result<i32, panError>;
 
-    fn poll(
-        self: Pin<&mut WriteFuture>,
-        cx: &mut Context<'_>,
-    ) -> Poll<Result<i32,panError>> {
+    fn poll(self: Pin<&mut WriteFuture>, cx: &mut Context<'_>) -> Poll<Result<i32, panError>> {
         match &mut *self.state.clone().lock().unwrap() {
             WriteState::Initial => {
                 debug!("write_future_poll: found initial");
@@ -626,7 +625,7 @@ enum ReadState {
     Initial,
     WaitReading {
         // completion has not yet been called
-      //  buffer: *mut Vec<u8>,
+        //  buffer: *mut Vec<u8>,
         bytes_read: *mut i32,
         from: *mut PanUDPAddr,
         path: *mut PanPath,
@@ -634,7 +633,7 @@ enum ReadState {
         waker: Option<Waker>,
     },
     ReadyReading {
-       // buffer: *mut Vec<u8>,
+        // buffer: *mut Vec<u8>,
         bytes_read: i32,
         from: PanUDPAddr,
         path: PanPath,
@@ -752,7 +751,7 @@ unsafe extern "C" fn read_completer(arc: *mut c_void, code: PanError) {
                     match &mut *c {
                         ReadState::WaitReading {
                             bytes_read: br,
-                           //  buffer: bu,
+                            //  buffer: bu,
                             from: fr,
                             path: p,
                             waker: w,
@@ -952,9 +951,9 @@ unsafe fn async_write_some_impl<C>(
     send_buff: &[u8],
     to: PanUDPAddr,
     via: Option<PanPath>,
-) -> WriteFuture 
+) -> WriteFuture
 where
-C: ?Send,
+    C: ?Send,
     C: Connection,
     C: IsSameType<Conn>,
     C: IsSameType<ListenConn>,
@@ -1074,7 +1073,7 @@ async fn async_write_impl<C>(
     via: Option<PanPath>,
 ) -> Result<(), Box<dyn Error>>
 where
-C: ?Send,
+    C: ?Send,
     C: Connection,
     C: IsSameType<Conn>,
     C: IsSameType<ListenConn>,
@@ -1106,7 +1105,7 @@ async unsafe fn recursive_write<C>(
     bytes_written: usize,
     bytes_to_send: usize,
 ) where
-C: Sync,
+    C: Sync,
     C: Send,
     C: Connection,
     C: IsSameType<Conn>,
@@ -1144,15 +1143,15 @@ C: Sync,
     }
 }
 
- fn async_write_impl2<'a, C>(
+fn async_write_impl2<'a, C>(
     this: Arc<Mutex<C>>,
     send_buff: &'a [u8],
     to: PanUDPAddr,
     via: Option<PanPath>,
-) -> std::pin::Pin<Box<dyn futures::Future<Output = ()> + std::marker::Send + Sync+ 'a>>
+) -> std::pin::Pin<Box<dyn futures::Future<Output = ()> + std::marker::Send + Sync + 'a>>
 where
     C: Send,
-    C:Sync,
+    C: Sync,
     C: 'a,
     C: Connection,
     C: IsSameType<Conn>,
@@ -1164,12 +1163,12 @@ where
 // actuall async_read_some_impl
 unsafe fn async_read_impl<'b, C>(
     this: Arc<Mutex<C>>,
-   // recv_buffer: &'b mut Vec<u8>, //  from: & mut PanUDPAddr,
-   buff: &'b mut [u8]
+    // recv_buffer: &'b mut Vec<u8>, //  from: & mut PanUDPAddr,
+    buff: &'b mut [u8],
 ) -> ReadFuture
 where
-// B: Into<&'b mut [u8]>,
-// &'b mut [u8]: From<&'b mut B>,
+    // B: Into<&'b mut [u8]>,
+    // &'b mut [u8]: From<&'b mut B>,
     C: Connection,
     C: IsSameType<ListenConn>,
     C: IsSameType<Conn>,
@@ -1197,8 +1196,6 @@ where
 
     debug!("initiate async_read operation ");
     let mut err: PanError = PAN_ERR_FAILED;
-
-
 
     if <C as IsSameType<ListenConn>>::IS_SAME_TYPE {
         err = PanListenConnReadFromAsyncVia(
@@ -1256,7 +1253,7 @@ where
         */
 
         *lck = ReadState::WaitReading {
-         //   buffer: recv_buffer as *mut Vec<u8>,
+            //   buffer: recv_buffer as *mut Vec<u8>,
             from: f,
             path: p,
             bytes_read: b,
@@ -1278,7 +1275,7 @@ impl ListenConn {
         this: Arc<Mutex<ListenConn>>,
         send_buff: &[u8],
         to: PanUDPAddr,
-    ) -> Result<i32,panError> {
+    ) -> Result<i32, panError> {
         unsafe { async_write_some_impl::<ListenConn>(this, send_buff, to, None).await }
     }
 
@@ -1287,7 +1284,7 @@ impl ListenConn {
         send_buff: &Vec<u8>,
         to: PanUDPAddr,
         via: PanPath,
-    ) -> Result<i32,panError> {
+    ) -> Result<i32, panError> {
         unsafe { async_write_some_impl::<ListenConn>(this, send_buff, to, Some(via)).await }
     }
 
@@ -1308,26 +1305,24 @@ impl ListenConn {
         async_write_impl::<ListenConn>(this, send_buff, to, Some(via)).await
     }
 
-    
     pub fn async_write_to2<'a>(
         this: Arc<Mutex<ListenConn>>,
         send_buff: &'a [u8],
         to: &Endpoint,
-    ) -> std::pin::Pin<Box<dyn futures::Future<Output = ()> + std::marker::Send +Sync+ 'a>>
-    {
-     unsafe{   async_write_impl2::<ListenConn>(this, send_buff, to.get_handle(), None)    }}
+    ) -> std::pin::Pin<Box<dyn futures::Future<Output = ()> + std::marker::Send + Sync + 'a>> {
+        unsafe { async_write_impl2::<ListenConn>(this, send_buff, to.get_handle(), None) }
+    }
 
     pub fn async_write_to_via2<'a>(
         this: Arc<Mutex<ListenConn>>,
-        send_buff: &'a[u8],
+        send_buff: &'a [u8],
         to: PanUDPAddr,
         via: PanPath,
-    ) -> std::pin::Pin<Box<dyn futures::Future<Output = ()> + std::marker::Send + 'a>>{
+    ) -> std::pin::Pin<Box<dyn futures::Future<Output = ()> + std::marker::Send + 'a>> {
         async_write_impl2::<ListenConn>(this, send_buff, to, Some(via))
     }
 
-    pub fn async_read2(this:Arc<Mutex<ListenConn>>, recv_buf: &mut [u8] ) ->ReadFuture
-    {
+    pub fn async_read2(this: Arc<Mutex<ListenConn>>, recv_buf: &mut [u8]) -> ReadFuture {
         unsafe { async_read_impl::<ListenConn>(this, recv_buf) }
     }
 
@@ -1371,14 +1366,23 @@ impl ListenConn {
     }*/
 
     pub unsafe fn set_deadline(&mut self, t: &std::time::Duration) {
+        if !self.is_valid() {
+            panic!(" attempt to invoke method on invalid ListenConn ");
+        }
         PanListenConnSetDeadline(self.get_handle(), t.as_millis().try_into().unwrap());
     }
 
     pub unsafe fn set_read_deadline(&mut self, t: &std::time::Duration) {
+        if !self.is_valid() {
+            panic!(" attempt to invoke method on invalid ListenConn ");
+        }
         PanListenConnSetReadDeadline(self.get_handle(), t.as_millis().try_into().unwrap());
     }
 
     pub unsafe fn set_write_deadline(&mut self, t: &std::time::Duration) {
+        if !self.is_valid() {
+            panic!(" attempt to invoke method on invalid ListenConn ");
+        }
         PanListenConnSetWriteDeadline(self.get_handle(), t.as_millis().try_into().unwrap());
     }
 
@@ -1390,32 +1394,40 @@ impl ListenConn {
     }
 
     pub fn listen(&mut self, local: &str) -> Result<(), Box<dyn Error>> {
-        unsafe{
-        let err: PanError = PanListenUDP(
-            local.as_ptr() as *const i8,
-            if self.selector.is_some() {
-                self.selector.as_ref().unwrap().get_handle()
-            } else {
-                Pan_GoHandle::default().get() as usize
-            },
-            self.h.resetAndGetAddressOf() as *mut usize,
-        );
+        unsafe {
+            let err: PanError = PanListenUDP(
+                local.as_ptr() as *const i8,
+                if self.selector.is_some() {
+                    self.selector.as_ref().unwrap().get_handle()
+                } else {
+                    Pan_GoHandle::default().get() as usize
+                },
+                self.h.resetAndGetAddressOf() as *mut usize,
+            );
 
-        if err == 0 {
-            Ok(())
-        } else {
-            Err(Box::new(panError(err)))
+            if err == 0 {
+                Ok(())
+            } else {
+                Err(Box::new(panError(err)))
+            }
         }
-    }
     }
 
     pub fn get_local_endpoint(&self) -> Endpoint {
-unsafe{        Endpoint::new(Pan_GoHandle::new1(
-            PanListenConnLocalAddr(self.get_handle()) as u64,
-        ))}
+        unsafe {
+            if !self.is_valid() {
+                panic!(" attempt to invoke method on invalid ListenConn ");
+            }
+            Endpoint::new(Pan_GoHandle::new1(
+                PanListenConnLocalAddr(self.get_handle()) as u64,
+            ))
+        }
     }
 
     pub unsafe fn read(self: &mut Self, buffer: &mut [u8]) -> Result<i32, Box<dyn Error>> {
+        if !self.is_valid() {
+            panic!(" attempt to invoke method on invalid ListenConn ");
+        }
         let mut h_from: Pan_GoHandle = Pan_GoHandle::default();
         let mut n: i32 = 0;
         let err = PanListenConnReadFrom(
@@ -1438,6 +1450,9 @@ unsafe{        Endpoint::new(Pan_GoHandle::new1(
         buffer: &mut [u8],
         from: &mut Endpoint,
     ) -> Result<i32, Box<dyn Error>> {
+        if !self.is_valid() {
+            panic!(" attempt to invoke method on invalid ListenConn ");
+        }
         let mut h_from: Pan_GoHandle = Pan_GoHandle::default();
         let mut n: i32 = 0;
         let err = PanListenConnReadFrom(
@@ -1463,6 +1478,9 @@ unsafe{        Endpoint::new(Pan_GoHandle::new1(
         from: &mut Endpoint,
         path: &mut Path,
     ) -> Result<i32, Box<dyn Error>> {
+        if !self.is_valid() {
+            panic!(" attempt to invoke method on invalid ListenConn ");
+        }
         let mut h_from: Pan_GoHandle = Pan_GoHandle::default();
         let mut h_path: Pan_GoHandle = Pan_GoHandle::default();
         let mut n: i32 = 0;
@@ -1490,6 +1508,9 @@ unsafe{        Endpoint::new(Pan_GoHandle::new1(
         buffer: &[u8],
         to: &Endpoint,
     ) -> Result<i32, Box<dyn Error>> {
+        if !self.is_valid() {
+            panic!(" attempt to invoke method on invalid ListenConn ");
+        }
         let mut n: i32 = 0;
         let err = PanListenConnWriteTo(
             self.get_handle(),
@@ -1512,6 +1533,9 @@ unsafe{        Endpoint::new(Pan_GoHandle::new1(
         to: &Endpoint,
         path: &Path,
     ) -> Result<i32, Box<dyn Error>> {
+        if !self.is_valid() {
+            panic!(" attempt to invoke method on invalid ListenConn ");
+        }
         let mut n: i32 = 0;
         let err = PanListenConnWriteToVia(
             self.get_handle(),
@@ -1534,6 +1558,9 @@ unsafe{        Endpoint::new(Pan_GoHandle::new1(
         go_socket_path: &str,
         c_socket_path: &str,
     ) -> Result<ListenSockAdapter, Box<dyn Error>> {
+        if !self.is_valid() {
+            panic!(" attempt to invoke method on invalid ListenConn ");
+        }
         let mut handle: Pan_GoHandle = Default::default();
         let err: PanError = PanNewListenSockAdapter(
             self.get_handle(),
@@ -1622,8 +1649,8 @@ impl GoHandleOwner for ConnSockAdapter {
 #[derive(Debug)]
 pub struct Conn {
     h: Pan_GoHandle,
-    policy: Option<Box<dyn PathPolicy +Sync +Send>>,
-    selector: Option<Box<dyn PathSelector + Sync +Send>>,
+    policy: Option<Box<dyn PathPolicy + Sync + Send>>,
+    selector: Option<Box<dyn PathSelector + Sync + Send>>,
 
     mtx_read: Arc<Mutex<ReadState>>,
     mtx_write: Arc<Mutex<WriteState>>,
@@ -1701,22 +1728,20 @@ impl Conn {
         async_write_impl::<Conn>(this, send_buff, 0, Some(via)).await
     }
 
-    pub  fn async_write2<'a>(
+    pub fn async_write2<'a>(
         this: Arc<Mutex<Conn>>,
-        send_buff: &'a [u8],        
-    ) -> std::pin::Pin<Box<dyn futures::Future<Output = ()> + std::marker::Send + Sync+'a>>
-    {
+        send_buff: &'a [u8],
+    ) -> std::pin::Pin<Box<dyn futures::Future<Output = ()> + std::marker::Send + Sync + 'a>> {
         async_write_impl2::<Conn>(this, send_buff, 0, None)
     }
 
     pub fn async_write_via2<'a>(
         this: Arc<Mutex<Conn>>,
-        send_buff: &'a[u8],        
+        send_buff: &'a [u8],
         via: PanPath,
-    ) -> std::pin::Pin<Box<dyn futures::Future<Output = ()> + std::marker::Send + 'a>>{
-        async_write_impl2::<Conn>(this, send_buff,0, Some(via))
+    ) -> std::pin::Pin<Box<dyn futures::Future<Output = ()> + std::marker::Send + 'a>> {
+        async_write_impl2::<Conn>(this, send_buff, 0, Some(via))
     }
-
 
     // actually async_read_some
     pub async fn async_read(
@@ -1729,8 +1754,7 @@ impl Conn {
         }
     }
 
-    pub fn async_read2(this:Arc<Mutex<Conn>>, recv_buf: &mut [u8] ) ->ReadFuture
-    {
+    pub fn async_read2(this: Arc<Mutex<Conn>>, recv_buf: &mut [u8]) -> ReadFuture {
         unsafe { async_read_impl::<Conn>(this, recv_buf) }
     }
 
@@ -1756,6 +1780,9 @@ impl Conn {
 
     pub fn get_local_endpoint(&self) -> Endpoint {
         unsafe {
+            if !self.is_valid() {
+                panic!(" attempt to invoke method on invalid Conn ");
+            }
             Endpoint::new(Pan_GoHandle::new1(
                 PanConnLocalAddr(self.get_handle()) as u64
             ))
@@ -1764,71 +1791,81 @@ impl Conn {
 
     pub fn get_remote_endpoint(&self) -> Endpoint {
         unsafe {
+            if !self.is_valid() {
+                panic!(" attempt to invoke method on invalid Conn ");
+            }
             Endpoint::new(Pan_GoHandle::new1(
                 PanConnRemoteAddr(self.get_handle()) as u64
             ))
         }
     }
 
-    pub fn dial_str( &mut self, local: Option<&str>, remote: &str ) ->Result<(),Box<dyn Error>>
-    {
+    pub fn dial_str(&mut self, local: Option<&str>, remote: &str) -> Result<(), Box<dyn Error>> {
         let addr = resolve_udp_addr(remote)?;
 
-        self.dial( local,
-    &addr )
-
+        self.dial(local, &addr)
     }
 
     pub fn dial(
         self: &mut Self,
         local: Option<&str>,
         remote: &Endpoint,
-    ) -> Result<(), Box<dyn Error>> 
-    {
+    ) -> Result<(), Box<dyn Error>> {
+        unsafe {
+            let err = PanDialUDP(
+                //    local.as_ptr() as *const i8,
+                if local.is_some() {
+                    local.unwrap().as_ptr() as *const i8
+                } else {
+                    std::ptr::null::<i8>()
+                },
+                remote.get_handle(),
+                if self.policy.is_some() {
+                    (self.policy.as_mut()).unwrap().get_handle()
+                } else {
+                    PAN_INVALID_HANDLE as usize
+                },
+                if self.selector.is_some() {
+                    self.selector.as_mut().unwrap().get_handle()
+                } else {
+                    PAN_INVALID_HANDLE as usize
+                },
+                self.h.resetAndGetAddressOf() as *mut PanConn,
+            );
 
-        
-
-        unsafe{
-        let err = PanDialUDP(
-        //    local.as_ptr() as *const i8,
-
-        if local.is_some(){ local.unwrap().as_ptr() as *const i8} else{ std::ptr::null::<i8>()},
-
-            remote.get_handle(),
-            if self.policy.is_some() {
-                (self.policy.as_mut()).unwrap().get_handle()
+            if err == 0 {
+                Ok(())
             } else {
-                PAN_INVALID_HANDLE as usize
-            },
-            if self.selector.is_some() {
-                self.selector.as_mut().unwrap().get_handle()
-            } else {
-                PAN_INVALID_HANDLE as usize
-            },
-            self.h.resetAndGetAddressOf() as *mut PanConn,
-        );
-
-        if err == 0 {
-            Ok(())
-        } else {
-            Err(Box::new(panError(err)))
+                Err(Box::new(panError(err)))
+            }
         }
-    }
     }
 
     pub unsafe fn set_deadline(self: &mut Self, timeout: u32) {
+        if !self.is_valid() {
+            panic!(" attempt to invoke method on invalid Conn ");
+        }
         PanConnSetDeadline(self.get_handle(), timeout);
     }
 
     pub unsafe fn set_read_deadline(self: &mut Self, timeout: u32) {
+        if !self.is_valid() {
+            panic!(" attempt to invoke method on invalid Conn ");
+        }
         PanConnSetReadDeadline(self.get_handle(), timeout);
     }
 
     pub unsafe fn set_write_deadline(self: &mut Self, timeout: u32) {
+        if !self.is_valid() {
+            panic!(" attempt to invoke method on invalid Conn ");
+        }
         PanConnSetWriteDeadline(self.get_handle(), timeout);
     }
 
     pub unsafe fn write(self: &Self, buffer: &[u8]) -> Result<i32, Box<dyn Error>> {
+        if !self.is_valid() {
+            panic!(" attempt to invoke method on invalid Conn ");
+        }
         let mut n: i32 = 0;
         let err = PanConnWrite(
             self.get_handle(),
@@ -1847,6 +1884,9 @@ impl Conn {
     }
 
     pub unsafe fn writeVia(self: &Self, buffer: &[u8], path: &Path) -> Result<i32, Box<dyn Error>> {
+        if !self.is_valid() {
+            panic!(" attempt to invoke method on invalid Conn ");
+        }
         let mut n: i32 = 0;
         let err = PanConnWriteVia(
             self.get_handle(),
@@ -1866,6 +1906,9 @@ impl Conn {
     }
 
     pub unsafe fn read(self: &Self, buffer: &mut [u8]) -> Result<i32, Box<dyn Error>> {
+        if !self.is_valid() {
+            panic!(" attempt to invoke method on invalid Conn ");
+        }
         let mut n: i32 = 0;
         let err = PanConnRead(
             self.get_handle(),
@@ -1885,6 +1928,9 @@ impl Conn {
         buffer: &mut [u8],
         path: &mut Path,
     ) -> Result<i32, Box<dyn Error>> {
+        if !self.is_valid() {
+            panic!(" attempt to invoke method on invalid Conn ");
+        }
         let mut h_path: Pan_GoHandle = Pan_GoHandle::default();
         let mut n: i32 = 0;
         let err = PanConnReadVia(
@@ -1907,6 +1953,9 @@ impl Conn {
         go_socket_path: &str,
         c_socket_path: &str,
     ) -> Result<ConnSockAdapter, Box<dyn Error>> {
+        if !self.is_valid() {
+            panic!(" attempt to invoke method on invalid Conn ");
+        }
         let mut handle: Pan_GoHandle = Pan_GoHandle::default();
 
         let err = PanNewConnSockAdapter(
