@@ -91,8 +91,29 @@ func PanDeleteHandle(handle C.uintptr_t) {
 */
 //export PanResolveUDPAddr
 func PanResolveUDPAddr(address *C.cchar_t, resolved *C.PanUDPAddr) C.PanError {
-	addr, err := pan.ResolveUDPAddr(context.Background(), C.GoString(address))
+	var add = C.GoString(address)
+	addr, err := pan.ResolveUDPAddr(context.Background(), add)
 	if err != nil {
+
+		if _, ok := err.(pan.HostNotFoundError); ok {
+			return C.PAN_ERR_HOSTNOTFOUND
+		}
+		return C.PAN_ERR_ADDR_RESOLUTION
+	}
+	ptr := (*C.PanUDPAddr)(unsafe.Pointer(resolved))
+	*ptr = C.PanUDPAddr(cgo.NewHandle(addr))
+	return C.PAN_ERR_OK
+}
+
+//export PanResolveUDPAddrN
+func PanResolveUDPAddrN(address *C.cchar_t, len C.int, resolved *C.PanUDPAddr) C.PanError {
+	var add = C.GoBytes(unsafe.Pointer(address), len)
+	addr, err := pan.ResolveUDPAddr(context.Background(), string(add))
+	if err != nil {
+
+		if _, ok := err.(pan.HostNotFoundError); ok {
+			return C.PAN_ERR_HOSTNOTFOUND
+		}
 		return C.PAN_ERR_ADDR_RESOLUTION
 	}
 	ptr := (*C.PanUDPAddr)(unsafe.Pointer(resolved))

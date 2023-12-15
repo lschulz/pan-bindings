@@ -29,6 +29,7 @@
 #define PAN_ERR_ADDR_SYNTAX 4
 #define PAN_ERR_ADDR_RESOLUTION 5
 #define PAN_ERR_WOULDBLOCK 6
+#define PAN_ERR_HOSTNOTFOUND 7
 
 
 typedef const void cvoid_t;

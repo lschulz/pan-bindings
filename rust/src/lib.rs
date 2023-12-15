@@ -283,6 +283,7 @@ impl Default for Endpoint {
 
 impl Into<snet::SocketAddr> for Endpoint
 {
+    /* 19-ffaa:1:1094,127.0.0.1:37227 -> 37904-100a:aff1:300,127.0.0.1:37227
     fn into(self) -> snet::SocketAddr {
         snet::SocketAddr::SCION(
              SocketAddrScion::new1(
@@ -291,6 +292,22 @@ impl Into<snet::SocketAddr> for Endpoint
                   self.get_ip().into()),
                    self.get_port()))
     }
+    */
+
+
+    fn into(self) -> snet::SocketAddr {
+        unsafe {
+            if !self.is_valid() 
+{ panic!("cannot convert invalid panEndpoint to SocketAddr ");
+}
+
+        snet::SocketAddr::SCION(
+
+            <snet::SocketAddrScion as FromStr>::from_str( &self.to_string() ).unwrap()
+
+        ) 
+    }
+}
 }
 
 impl From<snet::SocketAddrScion> for Endpoint
@@ -315,7 +332,7 @@ impl FromStr for Endpoint
     type Err = panError;
     fn from_str(s: &str) ->Result<Endpoint,Self::Err>
     {
-        unsafe{resolve_udp_addr(s)}
+        resolve_udp_addr(s)
     }
 }
 
@@ -336,8 +353,18 @@ impl Endpoint {
         Self { h: handle }
     }
 
+    pub fn new1( addr: &str ) ->Endpoint{
+
+       resolve_udp_addr(addr).unwrap()
+
+    }
+
     pub fn to_string(&self) -> String {
         unsafe {
+            if !self.is_valid()
+            {
+                panic!(" attempt to invoke method on invalid Endpoint ");
+            }
             let c_string_ptr = PanUDPAddrToString(self.get_handle());
 
             let c_str = CStr::from_ptr(c_string_ptr);
@@ -393,10 +420,12 @@ impl GoHandleOwner for Endpoint {
 
 use std::error::Error;
 
-pub unsafe fn resolve_udp_addr(address: &str) -> Result<Endpoint, panError> {
+pub fn resolve_udp_addr(address: &str) -> Result<Endpoint, panError> {
+    unsafe {
     let mut h: Pan_GoHandle = Default::default();
-    let err: PanError = PanResolveUDPAddr(
+    let err: PanError = PanResolveUDPAddrN(
         address.as_ptr() as *const ::std::os::raw::c_char,
+        address.len() as i32,
         h.resetAndGetAddressOf() as *mut PanUDPAddr,
     );
 
@@ -405,6 +434,7 @@ pub unsafe fn resolve_udp_addr(address: &str) -> Result<Endpoint, panError> {
     } else {
         Err(panError(err))
     }
+}
 }
 
 //} mod udp
@@ -1114,7 +1144,7 @@ C: Sync,
     }
 }
 
- async fn async_write_impl2<'a, C>(
+ fn async_write_impl2<'a, C>(
     this: Arc<Mutex<C>>,
     send_buff: &'a [u8],
     to: PanUDPAddr,
@@ -1279,25 +1309,27 @@ impl ListenConn {
     }
 
     
-    pub async fn async_write_to2<'a>(
+    pub fn async_write_to2<'a>(
         this: Arc<Mutex<ListenConn>>,
         send_buff: &'a [u8],
-        to: PanUDPAddr,
-    ) -> std::pin::Pin<Box<dyn futures::Future<Output = ()> + std::marker::Send + 'a>>
+        to: &Endpoint,
+    ) -> std::pin::Pin<Box<dyn futures::Future<Output = ()> + std::marker::Send +Sync+ 'a>>
     {
-        async_write_impl2::<ListenConn>(this, send_buff, to, None).await
-    }
+     unsafe{   async_write_impl2::<ListenConn>(this, send_buff, to.get_handle(), None)    }}
 
-    pub async fn async_write_to_via2<'a>(
+    pub fn async_write_to_via2<'a>(
         this: Arc<Mutex<ListenConn>>,
         send_buff: &'a[u8],
         to: PanUDPAddr,
         via: PanPath,
     ) -> std::pin::Pin<Box<dyn futures::Future<Output = ()> + std::marker::Send + 'a>>{
-        async_write_impl2::<ListenConn>(this, send_buff, to, Some(via)).await
+        async_write_impl2::<ListenConn>(this, send_buff, to, Some(via))
     }
 
-
+    pub fn async_read2(this:Arc<Mutex<ListenConn>>, recv_buf: &mut [u8] ) ->ReadFuture
+    {
+        unsafe { async_read_impl::<ListenConn>(this, recv_buf) }
+    }
 
     // actually async_read_some
     pub async fn async_read(
@@ -1357,7 +1389,8 @@ impl ListenConn {
         }
     }
 
-    pub unsafe fn listen(&mut self, local: &str) -> Result<(), Box<dyn Error>> {
+    pub fn listen(&mut self, local: &str) -> Result<(), Box<dyn Error>> {
+        unsafe{
         let err: PanError = PanListenUDP(
             local.as_ptr() as *const i8,
             if self.selector.is_some() {
@@ -1373,6 +1406,7 @@ impl ListenConn {
         } else {
             Err(Box::new(panError(err)))
         }
+    }
     }
 
     pub fn get_local_endpoint(&self) -> Endpoint {
@@ -1667,20 +1701,20 @@ impl Conn {
         async_write_impl::<Conn>(this, send_buff, 0, Some(via)).await
     }
 
-    pub async fn async_write2<'a>(
+    pub  fn async_write2<'a>(
         this: Arc<Mutex<Conn>>,
         send_buff: &'a [u8],        
     ) -> std::pin::Pin<Box<dyn futures::Future<Output = ()> + std::marker::Send + Sync+'a>>
     {
-        async_write_impl2::<Conn>(this, send_buff, 0, None).await
+        async_write_impl2::<Conn>(this, send_buff, 0, None)
     }
 
-    pub async fn async_write_via2<'a>(
+    pub fn async_write_via2<'a>(
         this: Arc<Mutex<Conn>>,
         send_buff: &'a[u8],        
         via: PanPath,
     ) -> std::pin::Pin<Box<dyn futures::Future<Output = ()> + std::marker::Send + 'a>>{
-        async_write_impl2::<Conn>(this, send_buff,0, Some(via)).await
+        async_write_impl2::<Conn>(this, send_buff,0, Some(via))
     }
 
 
@@ -1736,13 +1770,30 @@ impl Conn {
         }
     }
 
-    pub unsafe fn dial(
+    pub fn dial_str( &mut self, local: Option<&str>, remote: &str ) ->Result<(),Box<dyn Error>>
+    {
+        let addr = resolve_udp_addr(remote)?;
+
+        self.dial( local,
+    &addr )
+
+    }
+
+    pub fn dial(
         self: &mut Self,
-        local: &str,
+        local: Option<&str>,
         remote: &Endpoint,
-    ) -> Result<(), Box<dyn Error>> {
+    ) -> Result<(), Box<dyn Error>> 
+    {
+
+        
+
+        unsafe{
         let err = PanDialUDP(
-            local.as_ptr() as *const i8,
+        //    local.as_ptr() as *const i8,
+
+        if local.is_some(){ local.unwrap().as_ptr() as *const i8} else{ std::ptr::null::<i8>()},
+
             remote.get_handle(),
             if self.policy.is_some() {
                 (self.policy.as_mut()).unwrap().get_handle()
@@ -1762,6 +1813,7 @@ impl Conn {
         } else {
             Err(Box::new(panError(err)))
         }
+    }
     }
 
     pub unsafe fn set_deadline(self: &mut Self, timeout: u32) {
