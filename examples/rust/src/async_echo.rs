@@ -170,8 +170,14 @@ impl Client {
 
      unsafe{   PanCPolicyTest( p.get_handle() ); }
 
+
+        let mut s = Box::new( DefaultSelector::default() );
+        s.init();
+
+
         let c = Arc::new(Mutex::new(Conn::default()));
         c.lock().unwrap().set_policy(p);
+        c.lock().unwrap().set_selector(s);
 
         
         Self {
