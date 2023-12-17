@@ -7,7 +7,7 @@ include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
 
 use futures::future::{Future, TryFutureExt};
 use std::any::Any;
-use std::borrow::BorrowMut;
+
 use std::convert::TryInto;
 use std::ffi::CStr;
 use std::fmt;
@@ -234,11 +234,19 @@ impl GoHandleOwner for Path {
         prt
     }
 }
+
+mod path_policy{
+
+    use crate::{PathPolicy,FstBestPolicy};
+    use std::ptr::*;
+    use std::sync::{Once};
+    use std::borrow::BorrowMut;
+
 type meta_type = <dyn PathPolicy as Pointee>::Metadata;
 static mut STD_ONCE_META: Option<meta_type> = None;
 static INIT_META: Once = Once::new();
 
-fn meta<'a>() -> &'a meta_type {
+pub(crate) fn meta<'a>() -> &'a meta_type {
     INIT_META.call_once(|| {
         // Since this access is inside a call_once, before any other accesses, it is safe
         unsafe {
@@ -252,15 +260,14 @@ fn meta<'a>() -> &'a meta_type {
     // references will exist at this point or in the future.
     unsafe { STD_ONCE_META.as_ref().unwrap() }
 }
-/*/
-unsafe extern "C"  fn path_policy_cb_filter( paths: *mut usize, count: usize, user: usize) -> usize
-{
-    5
-}*/
+}
+
+
 
 type Paths = Vec<(Path, usize)>;
 
 pub trait PathPolicy: GoHandleOwner + Send + fmt::Debug {
+
     unsafe extern "C" fn cb_filter(paths: *mut usize, count: usize, user: usize) -> usize
     where
         Self: Sized,
@@ -268,7 +275,8 @@ pub trait PathPolicy: GoHandleOwner + Send + fmt::Debug {
         debug!("path-policy: cb_filter invoked ");
         let back_to_thin_ptr: *mut () = user as *mut ();
         let reconstructed_fat_ptr: *mut dyn PathPolicy =
-            std::ptr::from_raw_parts_mut::<dyn PathPolicy>(back_to_thin_ptr as *mut _, *meta());
+            std::ptr::from_raw_parts_mut::<dyn PathPolicy>(back_to_thin_ptr as *mut _,
+                 *path_policy::meta());
         let mut bx: Box<dyn PathPolicy> = unsafe { Box::from_raw(reconstructed_fat_ptr) };
 
         let mut path_obj: Paths = Paths::new();
@@ -367,27 +375,121 @@ impl PathPolicy for FstBestPolicy {
     }
 }
 
+
+mod path_selector{
+
+    use crate::{PathSelector, DefaultSelector};
+    use std::ptr::*;
+    use std::sync::{Once};
+    use std::borrow::BorrowMut;
+
+type meta_type = <dyn PathSelector as Pointee>::Metadata;
+static mut STD_ONCE_META: Option<meta_type> = None;
+static INIT_META: Once = Once::new();
+
+pub(crate) fn meta<'a>() -> &'a meta_type {
+    INIT_META.call_once(|| {
+        // Since this access is inside a call_once, before any other accesses, it is safe
+        unsafe {
+            let nullptr: *mut dyn PathSelector = std::ptr::null_mut::<DefaultSelector>();
+            *STD_ONCE_META.borrow_mut() = Some(std::ptr::metadata(nullptr));
+        }
+    });
+
+    // As long as this function is the only place with access to the static variable,
+    // giving out a read-only borrow here is safe because it is guaranteed no more mutable
+    // references will exist at this point or in the future.
+    unsafe { STD_ONCE_META.as_ref().unwrap() }
+}
+}
+
 pub trait PathSelector: GoHandleOwner + Send + fmt::Debug {
     // Callbacks for Go
-    fn cb_path(self: &mut Self, user: c_uint) -> c_uint;
-    fn cb_initialize(
-        self: &mut Self,
+    unsafe extern "C" fn cb_path( user: c_uint) -> PanPath where Self: Sized
+    {
+        let back_to_thin_ptr: *mut () = user as *mut ();
+        let reconstructed_fat_ptr: *mut dyn PathSelector =
+            std::ptr::from_raw_parts_mut::<dyn PathSelector>(back_to_thin_ptr as *mut _,
+                 *path_selector::meta());
+        let mut bx: Box<dyn PathSelector> = unsafe { Box::from_raw(reconstructed_fat_ptr) };
+
+        let res=  bx.path().release_handle();
+        Box::into_raw(bx);
+        res
+    }
+
+    unsafe extern "C"  fn cb_initialize(
         local: c_uint,
         remote: c_uint,
         paths: *const c_uint,
         count: c_uint,
         user: c_uint,
-    );
-    fn cb_refresh(self: &mut Self, paths: *const c_uint, count: c_uint, user: c_uint);
-    fn cb_path_down(self: &mut Self, pf: c_uint, pi: c_uint, user: c_uint);
-    fn cb_close(self: &mut Self, user: c_uint);
-    /*
+    ) where Self: Sized
+    {}
+    unsafe extern "C"  fn cb_refresh( paths: *const c_uint, count: c_uint, user: c_uint) where Self: Sized
+    {}
+    unsafe extern "C"  fn cb_path_down( pf: c_uint, pi: c_uint, user: c_uint) where Self: Sized
+    {}
+    unsafe extern "C"  fn cb_close( user: c_uint) where Self: Sized
+    {}
+    
         fn path(&mut self) -> Path;
-        fn initialize(&mut self, local: udp::Endpoint, remote: udp::Endpoint, paths: &mut Vec<Path>);
+        fn initialize(&mut self, local: &Endpoint, remote: &Endpoint, paths: &mut Vec<Path>);
         fn refresh(&mut self, paths: &mut Vec<Path>);
         fn path_down(&mut self, pf: PathFingerprint, pi: PathInterface);
         fn close(&mut self);
-    */
+    
+}
+
+
+#[derive(Debug)]
+pub struct DefaultSelector
+{
+    h: Pan_GoHandle,
+}
+
+unsafe impl  Send for DefaultSelector {}
+
+
+impl GoHandleOwner for DefaultSelector {
+    unsafe fn as_bool(&self) -> bool {
+        self.h.isValid()
+    }
+    unsafe fn is_valid(&self) -> bool {
+        self.h.isValid()
+    }
+    unsafe fn get_handle(&self) -> usize {
+        let retn: usize = self.h.get() as usize;
+        retn
+    }
+    unsafe fn release_handle(&mut self) -> usize {
+        let prt: usize = self.h.release() as usize;
+        prt
+    }
+}
+
+impl PathSelector for DefaultSelector
+{
+    fn path(&mut self) -> Path
+    {
+        unimplemented!();
+    }
+    fn initialize(&mut self, local: &Endpoint, remote: &Endpoint, paths: &mut Vec<Path>)
+    {
+
+    }
+    fn refresh(&mut self, paths: &mut Vec<Path>)
+    {
+
+    }
+    fn path_down(&mut self, pf: PathFingerprint, pi: PathInterface)
+    {
+
+    }
+    fn close(&mut self)
+    {
+
+    }
 }
 
 pub trait ReplySelector: GoHandleOwner + Send + fmt::Debug {
