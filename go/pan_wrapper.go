@@ -54,6 +54,7 @@ import (
 	"unsafe"
 
 	// "github.com/scionproto/scion/pkg/private/serrors"
+	// "github.com/stretchr/testify/assert"
 	"github.com/netsec-ethz/scion-apps/pkg/pan"
 	"inet.af/netaddr"
 )
@@ -365,7 +366,7 @@ func (p *CPolicy) Filter(paths []*pan.Path) []*pan.Path {
 
 	if newCount > 0 && newCount <= count {
 		filtered := make([]*pan.Path, 0, newCount)
-		for _, path := range path_handles {
+		for _, path := range path_handles[0:newCount] {
 			filtered = append(filtered, cgo.Handle(path).Value().(*pan.Path))
 		}
 		return filtered
@@ -383,6 +384,99 @@ func (p *CPolicy) Filter(paths []*pan.Path) []*pan.Path {
 //export PanNewCPolicy
 func PanNewCPolicy(filter C.PanPolicyFilterFn, user C.uintptr_t) C.PanPolicy {
 	return (C.PanPolicy)(cgo.NewHandle(NewCPolicy(filter, user)))
+}
+
+//export PanCPolicyTest
+func PanCPolicyTest(policy C.PanPolicy) {
+	var pol pan.Policy
+
+	if policy != 0 {
+		pol = cgo.Handle(policy).Value().(pan.Policy)
+	}
+
+	var test_paths []*pan.Path = TestPaths()
+
+	filtered_paths := pol.Filter(test_paths)
+
+	fmt.Printf("len filtered_paths: %v\n", len(filtered_paths))
+
+}
+
+func TestPaths() []*pan.Path {
+	unknown := time.Duration(0)
+
+	asA := pan.MustParseIA("1-0:0:1")
+	asB := pan.MustParseIA("1-0:0:2")
+	asC := pan.MustParseIA("1-0:0:3")
+
+	ifA1 := pan.PathInterface{IA: asA, IfID: 1}
+	ifB1 := pan.PathInterface{IA: asB, IfID: 1}
+	ifB2 := pan.PathInterface{IA: asB, IfID: 2}
+	ifC2 := pan.PathInterface{IA: asC, IfID: 2}
+	ifA3 := pan.PathInterface{IA: asA, IfID: 3}
+	ifC3 := pan.PathInterface{IA: asC, IfID: 3}
+	ifB4 := pan.PathInterface{IA: asB, IfID: 4}
+	ifC4 := pan.PathInterface{IA: asC, IfID: 4}
+
+	ifseqAC := []pan.PathInterface{ifA3, ifC3}
+	//ifseqAB := []pan.PathInterface{ifA1, ifB2}
+	ifseqABC := []pan.PathInterface{ifA1, ifB1, ifB2, ifC2}
+	ifseqAB4C := []pan.PathInterface{ifA1, ifB1, ifB4, ifC4}
+
+	var paths []*pan.Path = []*pan.Path{
+
+		/*
+			&pan.Path{
+				Source       :  ,
+				Destination  :  ,
+				//ForwardingPath ForwardingPath
+				Metadata       *PathMetadata // optional
+				// Fingerprint    PathFingerprint
+				// Expiry         time.Time
+			},
+		*/
+
+		&pan.Path{
+			Source:      asA,
+			Destination: asC,
+			//ForwardingPath ForwardingPath
+			Metadata: &pan.PathMetadata{
+				Interfaces: ifseqAC,
+				Latency:    []time.Duration{1},
+				MTU:        2304,
+			},
+
+			// Fingerprint    PathFingerprint
+			// Expiry         time.Time
+		},
+
+		&pan.Path{
+			Source:      asA,
+			Destination: asC,
+			//ForwardingPath ForwardingPath
+			Metadata: &pan.PathMetadata{
+				Interfaces: ifseqABC,
+				Latency:    []time.Duration{1, 1, 1},
+				MTU:        1500,
+			},
+			// Fingerprint    PathFingerprint
+			// Expiry         time.Time
+		},
+
+		&pan.Path{
+			Source:      asA,
+			Destination: asC,
+			//ForwardingPath ForwardingPath
+			Metadata: &pan.PathMetadata{
+				Interfaces: ifseqAB4C,
+				Latency:    []time.Duration{unknown, 1, 2},
+				MTU:        1500,
+			},
+			// Fingerprint    PathFingerprint
+			// Expiry         time.Time
+		},
+	}
+	return paths
 }
 
 //////////////

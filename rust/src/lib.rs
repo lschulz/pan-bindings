@@ -1,11 +1,13 @@
 #![allow(non_upper_case_globals)]
 #![allow(non_camel_case_types)]
 #![allow(non_snake_case)]
+#![feature(ptr_metadata)]
 
 include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
 
 use futures::future::{Future, TryFutureExt};
 use std::any::Any;
+use std::borrow::BorrowMut;
 use std::convert::TryInto;
 use std::ffi::CStr;
 use std::fmt;
@@ -15,10 +17,11 @@ use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::ops::Deref;
 use std::pin::*;
 use std::ptr::null;
+use std::ptr::*;
 use std::rc::Rc;
 use std::str;
 use std::str::FromStr;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, Once};
 use std::task::{Context, Poll, Waker};
 use std::time::Duration;
 extern crate snet;
@@ -231,14 +234,137 @@ impl GoHandleOwner for Path {
         prt
     }
 }
+type meta_type = <dyn PathPolicy as Pointee>::Metadata;
+static mut STD_ONCE_META: Option<meta_type> = None;
+static INIT_META: Once = Once::new();
+
+fn meta<'a>() -> &'a meta_type {
+    INIT_META.call_once(|| {
+        // Since this access is inside a call_once, before any other accesses, it is safe
+        unsafe {
+            let nullptr: *mut dyn PathPolicy = std::ptr::null_mut::<FstBestPolicy>();
+            *STD_ONCE_META.borrow_mut() = Some(std::ptr::metadata(nullptr));
+        }
+    });
+
+    // As long as this function is the only place with access to the static variable,
+    // giving out a read-only borrow here is safe because it is guaranteed no more mutable
+    // references will exist at this point or in the future.
+    unsafe { STD_ONCE_META.as_ref().unwrap() }
+}
+/*/
+unsafe extern "C"  fn path_policy_cb_filter( paths: *mut usize, count: usize, user: usize) -> usize
+{
+    5
+}*/
+
+type Paths = Vec<(Path, usize)>;
 
 pub trait PathPolicy: GoHandleOwner + Send + fmt::Debug {
-    fn cb_filter(self: &mut Self, paths: *const usize, count: usize, user: usize) -> usize;
+    unsafe extern "C" fn cb_filter(paths: *mut usize, count: usize, user: usize) -> usize
+    where
+        Self: Sized,
+    {
+        debug!("path-policy: cb_filter invoked ");
+        let back_to_thin_ptr: *mut () = user as *mut ();
+        let reconstructed_fat_ptr: *mut dyn PathPolicy =
+            std::ptr::from_raw_parts_mut::<dyn PathPolicy>(back_to_thin_ptr as *mut _, *meta());
+        let mut bx: Box<dyn PathPolicy> = unsafe { Box::from_raw(reconstructed_fat_ptr) };
+
+        let mut path_obj: Paths = Paths::new();
+        path_obj.reserve(count);
+
+        for i in 0..count {
+            let ptr = *paths.add(i);
+            // let handle = Pan_GoHandle_Duplicate( ptr as u64); // fails -> invalid GoHandle
+            let mut handle = Pan_GoHandle::new1(ptr as u64);
+            //  path_obj.push(  (Path::new(handle.duplicate() ),ptr as usize ) ); // segfaults
+            path_obj.push((Path::new(handle), ptr as usize));
+        }
+
+        bx.filter(&mut path_obj);
+
+        let new_cnt = path_obj.len();
+        assert!(new_cnt <= count);
+        for i in 0..new_cnt {
+            *paths.add(i) = path_obj[i].1;
+        }
+
+        Box::into_raw(bx);
+        new_cnt
+    }
+
     /*
      using PathTag = std::uintptr_t;
     using Paths = std::vector<std::pair<Path, PathTag>>;
     virtual void filter(Paths& paths) = 0;
-     */
+    */
+
+    // #![feature(associated_type_defaults)]
+    /*fn filter( &mut Paths );
+    type PathTag = usize;
+    type Paths = Vec<(Path,PathTag)>; */
+
+    fn filter(&mut self, paths: &mut Paths);
+}
+
+// example policy that always selects the fst provided path
+// regardless of its attributes
+#[derive(Debug)]
+pub struct FstBestPolicy {
+    h: Pan_GoHandle,
+}
+
+impl Default for FstBestPolicy {
+    fn default() -> Self {
+        FstBestPolicy {
+            h: Pan_GoHandle::default(),
+        }
+    }
+}
+
+unsafe impl Send for FstBestPolicy {}
+
+impl FstBestPolicy {
+    pub fn init(&mut self) {
+        unsafe {
+            let f: Option<unsafe extern "C" fn(*mut usize, usize, usize) -> usize> =
+                Some(<FstBestPolicy as PathPolicy>::cb_filter);
+
+            let this: *mut dyn PathPolicy = self as *mut FstBestPolicy;
+
+            let thin_ptr: *mut () = this as *mut ();
+            let user = thin_ptr as usize;
+
+            let p = PanNewCPolicy(f, user);
+
+            self.h.reset(p as u64);
+        }
+    }
+}
+
+impl GoHandleOwner for FstBestPolicy {
+    unsafe fn as_bool(&self) -> bool {
+        self.h.isValid()
+    }
+    unsafe fn is_valid(&self) -> bool {
+        self.h.isValid()
+    }
+    unsafe fn get_handle(&self) -> usize {
+        let retn: usize = self.h.get() as usize;
+        retn
+    }
+    unsafe fn release_handle(&mut self) -> usize {
+        let prt: usize = self.h.release() as usize;
+        prt
+    }
+}
+
+impl PathPolicy for FstBestPolicy {
+    fn filter(&mut self, paths: &mut Paths) {
+        debug!("path-policy: filter invoked");
+        paths.truncate(1); // keep only the fst path
+    }
 }
 
 pub trait PathSelector: GoHandleOwner + Send + fmt::Debug {
@@ -256,11 +382,11 @@ pub trait PathSelector: GoHandleOwner + Send + fmt::Debug {
     fn cb_path_down(self: &mut Self, pf: c_uint, pi: c_uint, user: c_uint);
     fn cb_close(self: &mut Self, user: c_uint);
     /*
-        fn path(&self) -> Path;
-        fn initialize(&self, local: udp::Endpoint, remote: udp::Endpoint, paths: &mut Vec<Path>);
-        fn refresh(&self, paths: &mut Vec<Path>);
-        fn path_down(&self, pf: PathFingerprint, pi: PathInterface);
-        fn close(&self);
+        fn path(&mut self) -> Path;
+        fn initialize(&mut self, local: udp::Endpoint, remote: udp::Endpoint, paths: &mut Vec<Path>);
+        fn refresh(&mut self, paths: &mut Vec<Path>);
+        fn path_down(&mut self, pf: PathFingerprint, pi: PathInterface);
+        fn close(&mut self);
     */
 }
 
@@ -274,11 +400,11 @@ pub trait ReplySelector: GoHandleOwner + Send + fmt::Debug {
     fn cb_path_down(&mut self, pf: c_uint, pi: c_uint, user: c_uint);
     fn cb_close(&mut self, user: c_uint);
     /*
-    fn path(&self, remote: udp::Endpoint) -> Path;
-    fn initialize(&self, local: udp::Endpoint);
-    fn record(&self, remote: udp::Endpoint, path: Path);
-    fn path_down(&self, pf: PathFingerprint, pi: PathInterface);
-    fn close(&self);
+    fn path(&mut self, remote: udp::Endpoint) -> Path;
+    fn initialize(& mut self, local: udp::Endpoint);
+    fn record(&mut self, remote: udp::Endpoint, path: Path);
+    fn path_down(&mut self, pf: PathFingerprint, pi: PathInterface);
+    fn close(&mut self);
      */
 }
 
@@ -1600,18 +1726,6 @@ impl ListenConn {
     }
 }
 
-/*
-impl Default for ListenConn {
-    fn default() -> Self {
-     unsafe{
-        Self {
-            h: Pan_GoHandle::default(),
-            selector: Box::from_raw(std::ptr::null_mut() ),//  Box::<dyn ReplySelector>::new(Default::default()),
-        }
-    }
-    }
-} */
-
 impl GoHandleOwner for ListenConn {
     unsafe fn as_bool(&self) -> bool {
         self.h.isValid()
@@ -1847,11 +1961,13 @@ impl Conn {
                 },
                 remote.get_handle(),
                 if self.policy.is_some() {
+                    debug!("client dial with policy");
                     (self.policy.as_mut()).unwrap().get_handle()
                 } else {
                     PAN_INVALID_HANDLE as usize
                 },
                 if self.selector.is_some() {
+                    debug!("client dial with selector");
                     self.selector.as_mut().unwrap().get_handle()
                 } else {
                     PAN_INVALID_HANDLE as usize
@@ -2024,6 +2140,12 @@ impl Default for Conn {
                 async_write_timeout: 100, //ms
             }
         }
+    }
+}
+
+impl Conn {
+    pub fn set_policy(&mut self, pol: Box<dyn PathPolicy + Send + Sync>) {
+        self.policy = Some(pol);
     }
 }
 

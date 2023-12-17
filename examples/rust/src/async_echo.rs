@@ -9,12 +9,13 @@ use std::error::Error;
 use std::io;
 use std::io::*;
 use std::result::Result;
-
+use time::macros;
 use std::sync::*;
 
 #[macro_use]
 extern crate log;
 extern crate simplelog;
+// use simple_logger::SimpleLogger;
 
 use simplelog::*;
 
@@ -38,8 +39,11 @@ struct Server {
 
 impl Server {
     pub fn new() -> Self {
+        let c= Arc::new(Mutex::new(ListenConn::default()));
+
         Self {
-            conn: Arc::new(Mutex::new(ListenConn::default())),
+            // initialize in an invalid state
+            conn: c,
         }
     }
 
@@ -64,10 +68,10 @@ impl Server {
         let mut recv_buff: Vec<u8> = vec![0; 4096];
         let mut path = Path::default();
         let mut from = Endpoint::default();
-
+        let mut cnt = 0;
         loop {
-            let mut res: Result<(i32, PanUDPAddr, PanPath), Box<dyn Error>> =
-                Err(Box::new(panError(PAN_ERR_OK)));
+            let mut res: Result<(i32, PanUDPAddr, PanPath), panError> =
+                Err(panError(PAN_ERR_OK));
 
             unsafe {
                 let read_block = async {
@@ -85,7 +89,7 @@ impl Server {
                                 res = Ok((i, f, 0));
                             }
                             Err(e) => {
-                                println!("error: {}", e.description());
+                                println!("error: {}", e.to_string());
                                 res = Err(e);
                             }
                         }
@@ -96,10 +100,11 @@ impl Server {
 
                 match res {
                     Ok((read, from_addr, path_from)) => {
+                        cnt+=1;
                         debug!("async-read successfull ");
                         from = Endpoint::new(Pan_GoHandle::new1(from_addr as u64));
 
-                        println!("received {} bytes from {}", read, from.to_string());
+                        println!("\n{} received {} bytes from {}",cnt, read, from.to_string());
                         if args.show_path {
                             // print path
                             debug!("path_from: {}", path_from);
@@ -128,13 +133,13 @@ impl Server {
                         rt.block_on(write_block);
                     }
                     Err(e) => {
-                        if e.downcast_ref::<panError>().unwrap().0 == panError(PAN_ERR_DEADLINE).0 {
+                        if e.0 == panError(PAN_ERR_DEADLINE).0 {
                             // client is done
-                            debug!("timeout");
+                            println!("timeout");
                             return Ok(());
                         } else {
-                            debug!("async_read failed");
-                            return Err(e);
+                            println!("async_read failed");
+                            return Err(Box::new(e));
                         }
                     }
                 }
@@ -159,19 +164,30 @@ struct Client {
 
 impl Client {
     pub fn new() -> Self {
+
+        let mut p = Box::new( FstBestPolicy::default() );
+        p.init();
+
+     unsafe{   PanCPolicyTest( p.get_handle() ); }
+
+        let c = Arc::new(Mutex::new(Conn::default()));
+        c.lock().unwrap().set_policy(p);
+
+        
         Self {
-            conn: Arc::new(Mutex::new(Conn::default())),
+            conn: c,
         }
     }
 
     pub fn connect(&mut self, args: &Arguments) -> Result<(), Box<dyn Error>> {
-        unsafe {
+       
+       /* unsafe {
             let remote_addr = resolve_udp_addr(&args.remote.as_ref().unwrap());
 
             let addr = match remote_addr {
                 Err(e) => {
                     println!("resolve remote address failed");
-                    return Err(e);
+                    return Err(Box::new(e));
                 }
                 Ok(add) => add,
             };
@@ -180,7 +196,10 @@ impl Client {
                 &args.local, //if args.local.is_empty() {}else {},
                 &addr,
             )
-        }
+        } */
+
+        self.conn.lock().unwrap().dial_str( Some(&args.local),
+         &args.remote.as_ref().unwrap() )
     }
 
     pub fn start(&mut self, args: &Arguments) -> Result<(), Box<dyn Error>> {
@@ -190,7 +209,7 @@ impl Client {
             //   let mut recv_buff: [u8; 4096] = [0; 4096];
             let mut recv_buff: Vec<u8> = vec![0; 4096];
 
-            for _ in 0..args.count {
+            for cnt in 0..args.count {
                 let write_block = async {
                     Conn::async_write(
                         self.conn.clone(),
@@ -202,7 +221,7 @@ impl Client {
 
                 self.conn.lock().unwrap().set_deadline(1000);
 
-                let mut res: Result<i32, Box<dyn Error>> = Err(Box::new(panError(PAN_ERR_FAILED)));
+                let mut res: Result<i32, panError> = Err(panError(PAN_ERR_FAILED));
 
                 let read_block = async {
                     if args.show_path {
@@ -223,13 +242,13 @@ impl Client {
 
                 match res {
                     Ok(read) => {
-                        println!("received {} bytes", read);
+                        println!("{} received {} bytes",cnt, read);
                         if path.is_valid() {
                             println!("path: {}", path.to_string());
                         }
                     }
                     Err(e) => {
-                        return Err(e);
+                        return Err(Box::new(e));
                     }
                 }
             }
@@ -249,7 +268,12 @@ impl Client {
 }
 
 fn main() {
-  //  SimpleLogger::init(LevelFilter::Debug, Config::default());
+    //SimpleLogger::new().with_local_timestamps().init(LevelFilter::Debug, Config::default()); // is simple_logger
+   // SimpleLogger::init(LevelFilter::Debug, Config::default() );
+   SimpleLogger::init(LevelFilter::Debug, ConfigBuilder::new().set_time_format_custom(format_description!("[second].[subsecond]")).set_time_level(LevelFilter::Debug).build() );
+    // ConfigBuilder::new().set_time_format_rfc2822().build()
+    // set_time_format_rfc3339() set_time_format_custom(format_description!("[hour]:[minute]:[second].[subsecond]")
+    
 
     let args = Arguments::parse();
 

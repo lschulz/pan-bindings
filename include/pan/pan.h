@@ -20,10 +20,10 @@ typedef struct { const char *p; ptrdiff_t n; } _GoString_;
 
 
 #line 17 "pan_wrapper.go"
-#ifdef BINDGEN
-// the rust cargo build sets this Define, because of a bug in bindgen 
-#include "pan_cdefs.h"
-#else
+
+ #ifdef BINDGEN
+ #include "pan_cdefs.h"
+ #else
  #include "pan/pan_cdefs.h"
  #endif
  #define PAN_STREAM_HDR_SIZE 4
@@ -122,6 +122,7 @@ extern void PanDeleteHandle(uintptr_t handle);
 \ingroup addresses
 */
 extern PanError PanResolveUDPAddr(cchar_t* address, PanUDPAddr* resolved);
+extern PanError PanResolveUDPAddrN(cchar_t* address, int len, PanUDPAddr* resolved);
 
 /**
 \brief Create a PanUDPAddr from ISD, ASN, IP and UDP port.
@@ -218,6 +219,7 @@ extern int PanPathFingerprintAreEqual(PanPathFingerprint fp_a, PanPathFingerprin
 \ingroup policy
 */
 extern PanPolicy PanNewCPolicy(PanPolicyFilterFn filter, uintptr_t user);
+extern void PanCPolicyTest(PanPolicy policy);
 
 /**
 \brief Create a new path selector.
