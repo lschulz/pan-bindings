@@ -8,6 +8,8 @@ include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
 use futures::future::{Future, TryFutureExt};
 use std::any::Any;
 
+use std::collections::hash_map;
+use std::collections::HashMap;
 use std::convert::TryInto;
 use std::ffi::CStr;
 use std::fmt;
@@ -139,12 +141,13 @@ pub struct PathFingerprint {
     h: Pan_GoHandle,
 }
 
-impl PartialEq for PathFingerprint
-{
+impl PartialEq for PathFingerprint {
     fn eq(&self, other: &Self) -> bool {
-        unsafe{
-        PanPathFingerprintAreEqual( self.get_handle() as PanPathFingerprint,
-        other.get_handle() as PanPathFingerprint ) == 1
+        unsafe {
+            PanPathFingerprintAreEqual(
+                self.get_handle() as PanPathFingerprint,
+                other.get_handle() as PanPathFingerprint,
+            ) == 1
         }
     }
 }
@@ -231,7 +234,7 @@ impl Default for Path {
 
 impl Clone for Path {
     fn clone(&self) -> Path {
-       unsafe{  Path::new( Pan_GoHandle_Duplicate( self.get_handle() as u64 ) ) }
+        unsafe { Path::new(Pan_GoHandle_Duplicate(self.get_handle() as u64)) }
     }
 }
 
@@ -475,7 +478,7 @@ pub trait PathSelector: GoHandleOwner + Send + fmt::Debug {
         for i in 0..count {
             path_objs.push(Path::new(Pan_GoHandle::new1(*paths.add(i) as u64)));
         }
-        bx.refresh( path_objs);
+        bx.refresh(path_objs);
 
         Box::into_raw(bx);
     }
@@ -505,7 +508,7 @@ pub trait PathSelector: GoHandleOwner + Send + fmt::Debug {
 
     fn path(&mut self) -> Path;
     fn initialize(&mut self, local: &Endpoint, remote: &Endpoint, paths: Vec<Path>); // paths are moved into
-    fn refresh(&mut self, paths: Vec<Path>);// paths are moved into
+    fn refresh(&mut self, paths: Vec<Path>); // paths are moved into
     fn path_down(&mut self, pf: PathFingerprint, pi: PathInterface);
     fn close(&mut self);
 }
@@ -513,7 +516,7 @@ pub trait PathSelector: GoHandleOwner + Send + fmt::Debug {
 #[derive(Debug)]
 pub struct DefaultSelector {
     h: Pan_GoHandle,
-    paths: Vec::<Path>,
+    paths: Vec<Path>,
     curr_path: usize,
 }
 
@@ -531,10 +534,10 @@ impl DefaultSelector {
     pub fn init(&mut self) {
         let mut callbacks: PanSelectorCallbacks = PanSelectorCallbacks {
             path: Some(<DefaultSelector as PathSelector>::cb_path),
-            initialize: None,
-            refresh: None,
-            pathDown: None,
-            close: None,
+            initialize: Some(<DefaultSelector as PathSelector>::cb_initialize),
+            refresh: Some(<DefaultSelector as PathSelector>::cb_refresh),
+            pathDown: Some(<DefaultSelector as PathSelector>::cb_path_down),
+            close: Some(<DefaultSelector as PathSelector>::cb_close),
         };
 
         let this: *mut dyn PathSelector = self as *mut DefaultSelector;
@@ -569,30 +572,24 @@ impl GoHandleOwner for DefaultSelector {
 }
 
 impl PathSelector for DefaultSelector {
-
     // better change signature to Option<Path> ?!
     fn path(&mut self) -> Path {
         debug!("path requested from path-selector");
-       return self.paths[self.curr_path].clone()
-       // unimplemented!()
+        return self.paths[self.curr_path].clone();
+        // unimplemented!()
     }
-    fn initialize(&mut self, local: &Endpoint, remote: &Endpoint, paths:  Vec<Path>) 
-    {
+    fn initialize(&mut self, local: &Endpoint, remote: &Endpoint, paths: Vec<Path>) {
         debug!("default path-selector initialized");
         self.paths = paths;
-        self.curr_path =0;
+        self.curr_path = 0;
     }
 
-
-    fn refresh(&mut self, new_paths:  Vec<Path>) 
-    {
+    fn refresh(&mut self, new_paths: Vec<Path>) {
         debug!("default path-selector refreshed");
-        let curr_fp = self.paths[self.curr_path ].get_fingerprint();
+        let curr_fp = self.paths[self.curr_path].get_fingerprint();
 
-        for i in 0..new_paths.len()
-        {
-            if new_paths[i].get_fingerprint() == curr_fp
-            {
+        for i in 0..new_paths.len() {
+            if new_paths[i].get_fingerprint() == curr_fp {
                 self.curr_path = i;
                 break;
             }
@@ -600,41 +597,207 @@ impl PathSelector for DefaultSelector {
         self.paths = new_paths;
     }
 
-    fn path_down(&mut self, pf: PathFingerprint, pi: PathInterface)
-    {
+    fn path_down(&mut self, pf: PathFingerprint, pi: PathInterface) {
         debug!("default path selector notified about path-down ");
-        if !self.paths.is_empty()
-        {
+        if !self.paths.is_empty() {
             let current = &self.paths[self.curr_path];
-            if current.get_fingerprint() == pf || current.contains_interface(&pi)
-            {
-                self.curr_path = ( self.curr_path + 1) % self.paths.len();
+            if current.get_fingerprint() == pf || current.contains_interface(&pi) {
+                self.curr_path = (self.curr_path + 1) % self.paths.len();
             }
         }
     }
 
-    fn close(&mut self) 
-    {
+    fn close(&mut self) {
         debug!("default path selector closed");
     }
 }
 
+mod reply_selector {
+
+    use crate::{DefaultReplySelector, ReplySelector};
+    use std::borrow::BorrowMut;
+    use std::ptr::*;
+    use std::sync::Once;
+
+    type meta_type = <dyn ReplySelector as Pointee>::Metadata;
+    static mut STD_ONCE_META: Option<meta_type> = None;
+    static INIT_META: Once = Once::new();
+
+    fn meta<'a>() -> &'a meta_type {
+        INIT_META.call_once(|| {
+            // Since this access is inside a call_once, before any other accesses, it is safe
+            unsafe {
+                let nullptr: *mut dyn ReplySelector = std::ptr::null_mut::<DefaultReplySelector>();
+                *STD_ONCE_META.borrow_mut() = Some(std::ptr::metadata(nullptr));
+            }
+        });
+
+        // As long as this function is the only place with access to the static variable,
+        // giving out a read-only borrow here is safe because it is guaranteed no more mutable
+        // references will exist at this point or in the future.
+        unsafe { STD_ONCE_META.as_ref().unwrap() }
+    }
+
+    pub(crate) fn from_raw(user: usize) -> Box<dyn ReplySelector> {
+        let back_to_thin_ptr: *mut () = user as *mut ();
+        let reconstructed_fat_ptr: *mut dyn ReplySelector =
+            std::ptr::from_raw_parts_mut::<dyn ReplySelector>(back_to_thin_ptr as *mut _, *meta());
+        let mut bx: Box<dyn ReplySelector> = unsafe { Box::from_raw(reconstructed_fat_ptr) };
+        bx
+    }
+}
+
 pub trait ReplySelector: GoHandleOwner + Send + fmt::Debug {
-    // fn new() -> Self;
-    // the c++ version has no self parameter. But rust apparently needs this
-    // to allow for Box<dyn ReplySelector>  to compile
-    fn cb_path(&mut self, remote: c_uint, user: c_uint) -> c_uint;
-    fn cb_initialize(&mut self, local: c_uint, user: c_uint);
-    fn cb_record(&mut self, remote: c_uint, path: c_uint, user: c_uint);
-    fn cb_path_down(&mut self, pf: c_uint, pi: c_uint, user: c_uint);
-    fn cb_close(&mut self, user: c_uint);
-    /*
-    fn path(&mut self, remote: udp::Endpoint) -> Path;
-    fn initialize(& mut self, local: udp::Endpoint);
-    fn record(&mut self, remote: udp::Endpoint, path: Path);
+    unsafe extern "C" fn cb_path(remote: PanUDPAddr, user: usize) -> usize
+    where
+        Self: Sized,
+    {
+        let mut bx = reply_selector::from_raw(user);
+
+        let res = bx
+            .path(Endpoint::new(Pan_GoHandle::new1(remote as u64)))
+            .release_handle();
+        Box::into_raw(bx);
+        res
+    }
+
+    unsafe extern "C" fn cb_initialize(local: PanUDPAddr, user: usize)
+    where
+        Self: Sized,
+    {
+        let mut bx = reply_selector::from_raw(user);
+
+        let res = bx.initialize(Endpoint::new(Pan_GoHandle::new1(local as u64)));
+        Box::into_raw(bx);
+        res
+    }
+
+    unsafe extern "C" fn cb_record(remote: PanUDPAddr, path: PanPath, user: usize)
+    where
+        Self: Sized,
+    {
+        let mut bx = reply_selector::from_raw(user);
+
+        let res = bx.record(
+            Endpoint::new(Pan_GoHandle::new1(remote as u64)),
+            Path::new(Pan_GoHandle::new1(path as u64)),
+        );
+        Box::into_raw(bx);
+        res
+    }
+
+    unsafe extern "C" fn cb_path_down(pf: PanPathFingerprint, pi: PanPathInterface, user: usize)
+    where
+        Self: Sized,
+    {
+        let mut bx = reply_selector::from_raw(user);
+
+        let res = bx.path_down(
+            PathFingerprint::new(Pan_GoHandle::new1(pf as u64)),
+            PathInterface::new(Pan_GoHandle::new1(pi as u64)),
+        );
+        Box::into_raw(bx);
+        res
+    }
+
+    unsafe extern "C" fn cb_close(user: usize)
+    where
+        Self: Sized,
+    {
+        let mut bx = reply_selector::from_raw(user);
+
+        let res = bx.close();
+        Box::into_raw(bx);
+        res
+    }
+
+    fn path(&mut self, remote: Endpoint) -> Path;
+    fn initialize(&mut self, local: Endpoint);
+    fn record(&mut self, remote: Endpoint, path: Path);
     fn path_down(&mut self, pf: PathFingerprint, pi: PathInterface);
     fn close(&mut self);
-     */
+}
+
+#[derive(Debug)]
+pub struct DefaultReplySelector {
+    h: Pan_GoHandle,
+    remotes: HashMap<String, Path>,
+}
+
+impl Default for DefaultReplySelector {
+    fn default() -> Self {
+        Self {
+            remotes: HashMap::default(),
+            h: Pan_GoHandle::default(),
+        }
+    }
+}
+
+impl DefaultReplySelector {
+    pub fn init(&mut self) {
+        let mut callbacks: PanReplySelCallbacks = PanReplySelCallbacks {
+            path: Some(<DefaultReplySelector as ReplySelector>::cb_path),
+            initialize: Some(<DefaultReplySelector as ReplySelector>::cb_initialize),
+            record: Some(<DefaultReplySelector as ReplySelector>::cb_record),
+            pathDown: Some(<DefaultReplySelector as ReplySelector>::cb_path_down),
+            close: Some(<DefaultReplySelector as ReplySelector>::cb_close),
+        };
+
+        let this: *mut dyn ReplySelector = self as *mut DefaultReplySelector;
+
+        let thin_ptr: *mut () = this as *mut ();
+        let user = thin_ptr as usize;
+
+        unsafe {
+            self.h.reset(
+                PanNewCReplySelector(&mut callbacks as *mut PanReplySelCallbacks, user) as u64,
+            );
+        }
+    }
+}
+
+unsafe impl Send for DefaultReplySelector {}
+
+impl GoHandleOwner for DefaultReplySelector {
+    unsafe fn as_bool(&self) -> bool {
+        self.h.isValid()
+    }
+    unsafe fn is_valid(&self) -> bool {
+        self.h.isValid()
+    }
+    unsafe fn get_handle(&self) -> usize {
+        let retn: usize = self.h.get() as usize;
+        retn
+    }
+    unsafe fn release_handle(&mut self) -> usize {
+        let prt: usize = self.h.release() as usize;
+        prt
+    }
+}
+
+impl ReplySelector for DefaultReplySelector {
+    // maybe change signature to: Option<Path>
+    fn path(&mut self, remote: Endpoint) -> Path {
+        debug!("default-reply-selector: path requested");
+        (*self.remotes.get::<String>(&remote.to_string()).unwrap()).clone()
+    }
+
+    fn initialize(&mut self, local: Endpoint) {
+        debug!("default-reply-selector: initialized");
+    }
+
+    fn record(&mut self, remote: Endpoint, path: Path) {
+        debug!("default-reply-selector: recorded path");
+        self.remotes.insert(remote.to_string(), path);
+    }
+
+    fn path_down(&mut self, pf: PathFingerprint, pi: PathInterface) {
+        debug!("default-reply-selector: path_down");
+    }
+
+    fn close(&mut self) {
+        debug!("default-reply-selector: closed");
+    }
 }
 
 //mod upd { // maybe unnecessary
@@ -1634,6 +1797,12 @@ where
 }
 
 impl ListenConn {
+
+  pub fn set_reply_selector(&mut self, s: Box<dyn ReplySelector + Send +Sync> )
+  {
+    self.selector = Some( s);
+  }
+
     pub async fn async_write_some_to(
         this: Arc<Mutex<ListenConn>>,
         send_buff: &[u8],
@@ -2377,8 +2546,7 @@ impl Conn {
         self.policy = Some(pol);
     }
 
-    pub fn set_selector(&mut self, selector: Box<dyn PathSelector+ Send+Sync> )
-    {
+    pub fn set_selector(&mut self, selector: Box<dyn PathSelector + Send + Sync>) {
         self.selector = Some(selector);
     }
 }

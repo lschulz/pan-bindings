@@ -41,6 +41,11 @@ impl Server {
     pub fn new() -> Self {
         let c= Arc::new(Mutex::new(ListenConn::default()));
 
+        let mut s = Box::new( DefaultReplySelector::default() );
+        s.init();
+
+        c.lock().unwrap().set_reply_selector( s);
+
         Self {
             // initialize in an invalid state
             conn: c,
@@ -57,6 +62,7 @@ impl Server {
     }
 
     pub fn start(&mut self, args: &Arguments) -> Result<(), Box<dyn Error>> {
+        debug!("server starts");
         unsafe {
             println!(
                 "server listening at: {}",
@@ -148,6 +154,7 @@ impl Server {
     }
 
     pub fn run(args: Arguments) {
+        debug!("server runs");
         let mut server = Server::new();
 
         server
@@ -210,6 +217,7 @@ impl Client {
 
     pub fn start(&mut self, args: &Arguments) -> Result<(), Box<dyn Error>> {
         unsafe {
+            debug!("client starts");
             let mut rt = tokio::runtime::Runtime::new().unwrap();
             let mut path = Path::default();
             //   let mut recv_buff: [u8; 4096] = [0; 4096];
@@ -263,6 +271,7 @@ impl Client {
     }
 
     pub fn run(args: Arguments) {
+        debug!("client runs");
         let mut client = Client::new();
 
         client
@@ -276,7 +285,8 @@ impl Client {
 fn main() {
     //SimpleLogger::new().with_local_timestamps().init(LevelFilter::Debug, Config::default()); // is simple_logger
    // SimpleLogger::init(LevelFilter::Debug, Config::default() );
-   SimpleLogger::init(LevelFilter::Debug, ConfigBuilder::new().set_time_format_custom(format_description!("[second].[subsecond]")).set_time_level(LevelFilter::Debug).build() );
+   //////// SimpleLogger::init(LevelFilter::Debug, ConfigBuilder::new().set_time_format_custom(format_description!("[second].[subsecond]")).set_time_level(LevelFilter::Debug).build() );
+   env_logger::init();
     // ConfigBuilder::new().set_time_format_rfc2822().build()
     // set_time_format_rfc3339() set_time_format_custom(format_description!("[hour]:[minute]:[second].[subsecond]")
     
