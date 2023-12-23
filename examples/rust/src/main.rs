@@ -126,12 +126,12 @@ impl Client {
             let remote_addr = resolve_udp_addr(&args.remote.as_ref().unwrap());
 
             let addr = match remote_addr {
-                Err(e) =>{ println!("resolve remote address failed"); return Err(e) },
+                Err(e) =>{ println!("resolve remote address failed"); return Err(Box::new(e)) },
                 Ok(add) => add,
             };
 
             match self.conn.dial(
-                &args.local, //if args.local.is_empty() {}else {},
+                Some(&args.local), //if args.local.is_empty() {}else {},
                 &addr,
             ) {
                 Err(e) =>{ println!("dial failed"); Err(e)},

@@ -50,6 +50,7 @@ import (
 	"net"
 	"os"
 	"runtime/cgo"
+	"sync"
 	"time"
 	"unsafe"
 
@@ -609,6 +610,16 @@ func PanNewCReplySelector(
 	return (C.PanReplySelector)(cgo.NewHandle(NewCReplySelector(callbacks, user)))
 }
 
+/* this combines pan.ListenConn and pan.ScionSocket so that they can share a common implementation
+ */
+type SocketLike interface {
+	ReadFromVia(b []byte) (int, pan.UDPAddr, *pan.Path, error)
+	WriteToVia(b []byte, dst pan.UDPAddr, path *pan.Path) (int, error)
+	WriteTo(p []byte, addr net.Addr) (n int, err error)
+	ReadFrom(p []byte) (n int, addr net.Addr, err error)
+	SetReadDeadline(t time.Time) error
+}
+
 ////////////////
 // ListenConn //
 ////////////////
@@ -646,7 +657,23 @@ func PanListenUDP(
 	}
 
 	ptr := (*C.PanListenConn)(unsafe.Pointer(conn))
-	*ptr = C.PanListenConn(cgo.NewHandle(c))
+	p := C.PanListenConn(cgo.NewHandle(c))
+	*ptr = p
+
+	{
+		mu00.Lock()
+		cch := make(chan tuple00, 1)
+		chann00s[uintptr(p)] = cch
+		go fcn00(cch)
+		mu00.Unlock()
+	}
+	{
+		mu01.Lock()
+		cch := make(chan tuple01, 1)
+		chann01s[uintptr(p)] = cch
+		go fcn01(cch)
+		mu01.Unlock()
+	}
 
 	return C.PAN_ERR_OK
 }
@@ -743,7 +770,12 @@ func PanListenConnReadFromAsync(conn C.PanListenConn, buffer *C.void, len C.int,
 				// Read would block in non-blocking mode
 
 				// Launch a goroutine for non-blocking read
-
+				var chann01 chan tuple01
+				{
+					mu01.Lock()
+					chann01 = chann01s[uintptr(conn)]
+					mu01.Unlock()
+				}
 				chann01 <- tuple01{p, c, from, nil, n, waker, arc_conn}
 
 				return C.PAN_ERR_WOULDBLOCK
@@ -772,9 +804,10 @@ func PanListenConnReadFromAsync(conn C.PanListenConn, buffer *C.void, len C.int,
 	return C.PAN_ERR_OK
 }
 
+// ListenConn ReadFrom
 type tuple01 struct {
 	buffer_out       []byte
-	conn             pan.ListenConn      // or ptr-to ?!
+	conn             SocketLike          // or ptr-to ?!
 	from_out         *C.PanUDPAddr       // *_Ctype_ulong
 	path_out         *C.PanPath          // *_Ctype_ulong
 	bytes_read_out   *C.int              // *_Ctype_int
@@ -785,7 +818,7 @@ type tuple01 struct {
 
 var chann01 chan tuple01
 
-func fcn01() {
+func fcn01(chann01 chan tuple01) {
 
 	for {
 		recv_op := <-chann01
@@ -879,6 +912,12 @@ func PanListenConnReadFromAsyncVia(conn C.PanListenConn, buffer *C.void, len C.i
 
 			if t.Timeout() {
 				// Read would block in non-blocking mode
+				var chann01 chan tuple01
+				{
+					mu01.Lock()
+					chann01 = chann01s[uintptr(conn)]
+					mu01.Unlock()
+				}
 
 				chann01 <- tuple01{p, c, from, path, n, waker, arc_conn}
 
@@ -1024,6 +1063,12 @@ func PanListenConnWriteToAsync(
 			//if t.Timeout() {
 			if true {
 
+				var chann00 chan tuple00
+				{
+					mu00.Lock()
+					chann00 = chann00s[uintptr(conn)]
+					mu00.Unlock()
+				}
 				chann00 <- tuple00{p, addr, nil, n, waker, c, arc_conn}
 
 				return C.PAN_ERR_WOULDBLOCK
@@ -1066,14 +1111,12 @@ type tuple00 struct {
 	to_path   *pan.Path
 	written   *C.int
 	completer C.OnCompletionWaker
-	conn      pan.ListenConn // or pointer-to ?!
+	conn      SocketLike // or pointer-to ?!
 	arc_conn  *C.void
 	// timeout also has to go here
 }
 
-var chann00 chan tuple00 //= make(chan tuple00)
-
-func fcn00() {
+func fcn00(chann00 chan tuple00) {
 
 	for {
 
@@ -1154,6 +1197,12 @@ func PanListenConnWriteToViaAsync(
 			//if t.Timeout() {
 			if true {
 				// dispatch a non-blocking write operation and pass along the required parameters
+				var chann00 chan tuple00
+				{
+					mu00.Lock()
+					chann00 = chann00s[uintptr(conn)]
+					mu01.Unlock()
+				}
 
 				chann00 <- tuple00{p, addr, via, n, waker, c, arc_conn}
 
@@ -1288,6 +1337,22 @@ PanDeleteHandle().
 func PanListenConnClose(conn C.PanListenConn) C.PanError {
 	handle := cgo.Handle(conn)
 	err := handle.Value().(pan.ListenConn).Close()
+	{
+		mu00.Lock()
+
+		close(chann00s[uintptr(conn)])
+		delete(chann00s, uintptr(conn))
+
+		mu00.Unlock()
+	}
+	{
+		mu01.Lock()
+
+		close(chann01s[uintptr(conn)])
+		delete(chann01s, uintptr(conn))
+		mu01.Unlock()
+	}
+
 	if err != nil {
 		return C.PAN_ERR_FAILED
 	}
@@ -1343,7 +1408,23 @@ func PanDialUDP(
 		return C.PAN_ERR_FAILED
 	}
 	ptr := (*C.PanConn)(unsafe.Pointer(conn))
-	*ptr = C.PanConn(cgo.NewHandle(c))
+	p := C.PanConn(cgo.NewHandle(c))
+	*ptr = p
+	{
+		mu02.Lock()
+		cch := make(chan tuple02, 1)
+		chann02s[uintptr(p)] = cch
+		go fcn02(cch)
+		mu02.Unlock()
+	}
+	{
+		mu03.Lock()
+		cch := make(chan tuple03, 1)
+		chann03s[uintptr(p)] = cch
+		go fcn03(cch)
+		mu03.Unlock()
+	}
+
 	return C.PAN_ERR_OK
 }
 
@@ -1416,6 +1497,7 @@ func PanConnReadVia(
 	return C.PAN_ERR_OK
 }
 
+// pan.Conn readVia
 type tuple02 struct {
 	buffer_out       []byte
 	conn             pan.Conn // or ptr-to ?!
@@ -1426,9 +1508,7 @@ type tuple02 struct {
 	// add timeout here
 }
 
-var chann02 chan tuple02
-
-func fcn02() {
+func fcn02(chann02 chan tuple02) {
 
 	for {
 
@@ -1515,6 +1595,12 @@ func PanConnReadViaAsync(
 		if errors.As(err, &t) {
 			if t.Timeout() {
 				// Read would block in non-blocking mode
+				var chann02 chan tuple02
+				{
+					mu02.Lock()
+					chann02 = chann02s[uintptr(conn)]
+					mu02.Unlock()
+				}
 
 				chann02 <- tuple02{p, c, path, n, waker, arc_conn}
 
@@ -1589,9 +1675,7 @@ type tuple03 struct {
 	arc_conn  *C.void
 }
 
-var chann03 chan tuple03
-
-func fcn03() {
+func fcn03(chann03 chan tuple03) {
 	for {
 
 		recv_op := <-chann03
@@ -1667,6 +1751,12 @@ func PanConnWriteAsync(conn C.PanListenConn, buffer *C.cvoid_t, len C.int, n *C.
 
 			//if t.Timeout() {
 			if true { // write would block
+				var chann03 chan tuple03
+				{
+					mu03.Lock()
+					chann03 = chann03s[uintptr(conn)]
+					mu03.Unlock()
+				}
 
 				chann03 <- tuple03{p, n, nil, waker, c, arc_conn}
 				// launch a go routine for non-blocking write
@@ -1708,6 +1798,14 @@ func PanConnWriteAsync(conn C.PanListenConn, buffer *C.cvoid_t, len C.int, n *C.
 
 var envFlags flag.SCIONEnvironment
 var service daemon.Service
+var mu00 sync.Mutex
+var mu01 sync.Mutex
+var mu02 sync.Mutex
+var mu03 sync.Mutex
+var chann00s map[uintptr]chan tuple00
+var chann01s map[uintptr]chan tuple01
+var chann02s map[uintptr]chan tuple02
+var chann03s map[uintptr]chan tuple03
 
 func init() {
 	fmt.Println("INIT CALLED")
@@ -1719,15 +1817,11 @@ func init() {
 
 	service = daemon.NewService(daemonAddr)
 
-	chann00 = make(chan tuple00, 1)
-	chann01 = make(chan tuple01, 1)
-	chann02 = make(chan tuple02, 1)
-	chann03 = make(chan tuple03, 1)
+	chann00s = make(map[uintptr]chan tuple00)
+	chann01s = make(map[uintptr]chan tuple01)
+	chann02s = make(map[uintptr]chan tuple02)
+	chann03s = make(map[uintptr]chan tuple03)
 
-	go fcn00()
-	go fcn01()
-	go fcn02()
-	go fcn03()
 }
 
 //export GetLocalIA
@@ -1813,7 +1907,12 @@ func PanConnWriteViaAsync(
 			if true {
 
 				// write would block
-				// launch a go routine for non-blocking write
+				var chann03 chan tuple03
+				{
+					mu03.Lock()
+					chann03 = chann03s[uintptr(conn)]
+					mu03.Unlock()
+				}
 				chann03 <- tuple03{p, n, via, waker, c, arc_conn}
 
 				return C.PAN_ERR_WOULDBLOCK
@@ -1919,6 +2018,22 @@ PanDeleteHandle().
 func PanConnClose(conn C.PanConn) C.PanError {
 	handle := cgo.Handle(conn)
 	err := handle.Value().(pan.Conn).Close()
+	{
+		mu02.Lock()
+
+		close(chann02s[uintptr(conn)])
+		delete(chann02s, uintptr(conn))
+
+		mu02.Unlock()
+	}
+	{
+		mu03.Lock()
+
+		close(chann03s[uintptr(conn)])
+		delete(chann03s, uintptr(conn))
+		mu03.Unlock()
+	}
+
 	if err != nil {
 		return C.PAN_ERR_FAILED
 	}

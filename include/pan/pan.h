@@ -425,6 +425,7 @@ extern PanError PanConnReadViaAsync(PanConn conn, void* buffer, int len, PanPath
 */
 extern PanError PanConnWrite(PanListenConn conn, cvoid_t* buffer, int len, int* n);
 extern PanError PanConnWriteAsync(PanListenConn conn, cvoid_t* buffer, int len, int* n, int timeout, OnCompletionWaker waker, void* arc_conn);
+extern GoUint64 GetLocalIA();
 
 /**
 \brief Wrapper for `(pan.Conn).WriteVia`
