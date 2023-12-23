@@ -681,7 +681,8 @@ pub trait ReplySelector: GoHandleOwner + Send + fmt::Debug {
         res
     }
 
-    unsafe extern "C" fn cb_initialize(local: PanUDPAddr, user: usize)
+   // unsafe extern "C" fn cb_initialize(local: PanUDPAddr, user: usize)
+   unsafe extern "C" fn cb_initialize(local: u64, user: usize)
     where
         Self: Sized,
     {

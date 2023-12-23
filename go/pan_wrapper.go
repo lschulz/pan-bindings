@@ -496,6 +496,7 @@ func TestPaths() []*pan.Path {
 //////////////
 
 type CSelector struct {
+	local_ia  pan.IA
 	callbacks C.struct_PanSelectorCallbacks
 	user_data C.uintptr_t
 }
@@ -507,12 +508,21 @@ func NewCSelector(callbacks *C.struct_PanSelectorCallbacks, user C.uintptr_t) *C
 	}
 }
 
-func (s *CSelector) Path() *pan.Path {
+func (s *CSelector) NewRemote(remote pan.UDPAddr) error {
+	return nil
+}
+
+func (s *CSelector) GetIA() pan.IA {
+	return s.local_ia
+}
+
+func (s *CSelector) Path(remote pan.UDPAddr) (*pan.Path, error) {
 	path := C.panCallSelectorPath(s.callbacks.path, s.user_data)
-	return cgo.Handle(path).Value().(*pan.Path)
+	return cgo.Handle(path).Value().(*pan.Path), nil
 }
 
 func (s *CSelector) Initialize(local, remote pan.UDPAddr, paths []*pan.Path) {
+	s.local_ia = local.IA
 	loc := cgo.NewHandle(local)
 	rem := cgo.NewHandle(remote)
 	path_handles := getPathHandles(paths)
@@ -569,15 +579,23 @@ func NewCReplySelector(callbacks *C.struct_PanReplySelCallbacks, user C.uintptr_
 	}
 }
 
-func (s *CReplySelector) Path(remote pan.UDPAddr) *pan.Path {
+func (s *CReplySelector) Path(remote pan.UDPAddr) (*pan.Path, error) {
 	rem := cgo.NewHandle(remote)
 	path := C.panCallReplySelPath(s.callbacks.path, C.PanUDPAddr(rem), s.user_data)
-	return cgo.Handle(path).Value().(*pan.Path)
+	return cgo.Handle(path).Value().(*pan.Path), nil
 }
 
-func (s *CReplySelector) Initialize(local pan.UDPAddr) {
+/*func (s *CReplySelector) Initialize(local pan.UDPAddr) {
 	loc := cgo.NewHandle(local)
 	C.panCallReplySelInitialize(s.callbacks.initialize, C.PanUDPAddr(loc), s.user_data)
+} */
+
+func (s *CReplySelector) Initialize(local pan.IA) {
+	C.panCallReplySelInitialize(s.callbacks.initialize, C.cuint64_t(local), s.user_data)
+}
+
+func (s *CReplySelector) LocalAddrChanged(pan.UDPAddr) {
+
 }
 
 func (s *CReplySelector) Record(remote pan.UDPAddr, path *pan.Path) {

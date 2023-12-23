@@ -143,7 +143,8 @@ inline void panCallSelectorClose(PanSelectorClose f, uintptr_t user)
 typedef PanPath (*PanReplySelPathFn)(PanUDPAddr remote, uintptr_t user);
 
 /// Handles must be deleted by callee.
-typedef void (*PanReplySelInitializeFn)(PanUDPAddr local, uintptr_t user);
+//typedef void (*PanReplySelInitializeFn)(PanUDPAddr local, uintptr_t user);
+typedef void (*PanReplySelInitializeFn)(uint64_t local, uintptr_t user);
 
 /// Handles must be deleted by callee.
 typedef void (*PanReplySelRecordFn)(PanUDPAddr remote, PanPath path, uintptr_t user);
@@ -167,7 +168,8 @@ inline uintptr_t panCallReplySelPath(PanReplySelPathFn f, PanUDPAddr remote, uin
 	return f(remote, user);
 }
 
-inline void panCallReplySelInitialize(PanReplySelInitializeFn f, PanUDPAddr local, uintptr_t user)
+//inline void panCallReplySelInitialize(PanReplySelInitializeFn f, PanUDPAddr local, uintptr_t user)
+inline void panCallReplySelInitialize(PanReplySelInitializeFn f, uint64_t local, uintptr_t user)
 {
 	f(local, user);
 }
