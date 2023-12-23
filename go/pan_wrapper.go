@@ -690,6 +690,21 @@ func PanNewScionSocket(listen *C.cchar_t) C.PanScionSocket {
 
 	p := C.PanScionSocket(cgo.NewHandle(sock))
 
+	{
+		mu00.Lock()
+		cch := make(chan tuple00, 1)
+		chann00s[uintptr(p)] = cch
+		go fcn00(cch)
+		mu00.Unlock()
+	}
+	{
+		mu01.Lock()
+		cch := make(chan tuple01, 1)
+		chann01s[uintptr(p)] = cch
+		go fcn01(cch)
+		mu01.Unlock()
+	}
+
 	return p
 }
 
@@ -702,6 +717,20 @@ func PanNewScionSocket2() C.PanScionSocket {
 	}
 
 	p := C.PanScionSocket(cgo.NewHandle(sock))
+	{
+		mu00.Lock()
+		cch := make(chan tuple00, 1)
+		chann00s[uintptr(p)] = cch
+		go fcn00(cch)
+		mu00.Unlock()
+	}
+	{
+		mu01.Lock()
+		cch := make(chan tuple01, 1)
+		chann01s[uintptr(p)] = cch
+		go fcn01(cch)
+		mu01.Unlock()
+	}
 	return p
 }
 
@@ -1238,6 +1267,8 @@ func PanSocketLikeWriteToViaAsyncImpl(
 	addr := cgo.Handle(to).Value().(pan.UDPAddr)
 	via := cgo.Handle(path).Value().(*pan.Path)
 
+	fmt.Println("PanSocketLikeWriteToViaAsyncImpl")
+
 	// Set write deadline to zero for non-blocking write
 	/*if err := c.SetWriteDeadline(time.Now()); err != nil {
 		fmt.Println("Error setting write deadline:", err)
@@ -1262,9 +1293,11 @@ func PanSocketLikeWriteToViaAsyncImpl(
 				var chann00 chan tuple00
 				{
 					mu00.Lock()
+					fmt.Println("trying to get lock 0")
 					conn := C.PanScionSocket(ch)
 					chann00 = chann00s[uintptr(conn)]
-					mu01.Unlock()
+					mu00.Unlock()
+					fmt.Println("unlocked 0")
 				}
 
 				chann00 <- tuple00{p, addr, via, n, waker, c, arc_conn}
@@ -1309,6 +1342,7 @@ func PanSocketLikeWriteToAsyncImpl(
 	c := ch.Value().(SocketLike)
 	p := C.GoBytes(unsafe.Pointer(buffer), len)
 	addr := cgo.Handle(to).Value().(pan.UDPAddr)
+	fmt.Println("PanSocketLikeWriteToAsyncImpl")
 
 	// Set write deadline to zero for non-blocking write
 	/*if err := c.SetWriteDeadline(time.Now()); err != nil {
@@ -1333,10 +1367,13 @@ func PanSocketLikeWriteToAsyncImpl(
 
 				var chann00 chan tuple00
 				{
+					fmt.Println("trying to get Lock1")
 					mu00.Lock()
 					conn := C.PanScionSocket(ch)
 					chann00 = chann00s[uintptr(conn)]
 					mu00.Unlock()
+					fmt.Println("unlocked1")
+
 				}
 				chann00 <- tuple00{p, addr, nil, n, waker, c, arc_conn}
 
