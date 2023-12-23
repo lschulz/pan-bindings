@@ -620,11 +620,14 @@ type SocketLike interface {
 	WriteTo(p []byte, addr net.Addr) (n int, err error)
 	ReadFrom(p []byte) (n int, addr net.Addr, err error)
 	SetReadDeadline(t time.Time) error
+	Close() error
 }
 
 //////////////////////////////////////////////
 ///// SCION SOCKET
 ////////////////////////////////////////////////
+
+/*
 
 //export PanNewScionSocket
 func PanNewScionSocket(listen *C.cchar_t, socket *C.PanScionSocket) C.PanError {
@@ -654,6 +657,35 @@ func PanNewScionSocket2(socket *C.PanScionSocket) C.PanError {
 	*ptr = p
 	return C.PAN_ERR_OK
 }
+*/
+
+//export PanNewScionSocket
+func PanNewScionSocket(listen *C.cchar_t) C.PanScionSocket {
+	local, err := netip.ParseAddrPort(C.GoString(listen))
+	if err != nil {
+		return C.PAN_ERR_ADDR_SYNTAX
+	}
+	sock, err := pan.NewScionSocket(context.Background(), local)
+	if err != nil {
+		panic(fmt.Sprintf("%v", err))
+	}
+
+	p := C.PanScionSocket(cgo.NewHandle(sock))
+
+	return p
+}
+
+//export PanNewScionSocket2
+func PanNewScionSocket2() C.PanScionSocket {
+
+	sock, err := pan.NewScionSocket2()
+	if err != nil {
+		panic(fmt.Sprintf("%v", err))
+	}
+
+	p := C.PanScionSocket(cgo.NewHandle(sock))
+	return p
+}
 
 //export PanScionSocketBind
 func PanScionSocketBind(socket C.PanScionSocket, listen *C.cchar_t) C.PanError {
@@ -671,8 +703,16 @@ func PanScionSocketBind(socket C.PanScionSocket, listen *C.cchar_t) C.PanError {
 
 }
 
-func PanSocketLikeReadFromAsyncImpl(c SocketLike, buffer *C.void, len C.int, from *C.PanUDPAddr, n *C.int, timeout_duration C.int, waker C.OnCompletionWaker, arc_conn *C.void) C.PanError {
-	// this is exactly the same impl as PanListenConnReadFromAsync() -> so share it with SocketLike interface
+//export PanScionSocketGetLocalAddr
+func PanScionSocketGetLocalAddr(socket C.PanScionSocket) *C.char {
+	s := cgo.Handle(socket).Value().(pan.ScionSocket)
+
+	return C.CString(s.LocalAddr().String())
+}
+
+func PanSocketLikeReadFromAsyncImpl(ch cgo.Handle, buffer *C.void, len C.int, from *C.PanUDPAddr, n *C.int, timeout_duration C.int, waker C.OnCompletionWaker, arc_conn *C.void) C.PanError {
+
+	c := ch.Value().(SocketLike)
 
 	p := unsafe.Slice((*byte)(unsafe.Pointer(buffer)), len)
 
@@ -717,7 +757,7 @@ func PanSocketLikeReadFromAsyncImpl(c SocketLike, buffer *C.void, len C.int, fro
 				var chann01 chan tuple01
 				{
 					mu01.Lock()
-					conn := C.PanScionSocket(cgo.NewHandle(c))
+					conn := C.PanScionSocket(ch)
 					chann01 = chann01s[uintptr(conn)]
 					mu01.Unlock()
 				}
@@ -751,87 +791,29 @@ func PanSocketLikeReadFromAsyncImpl(c SocketLike, buffer *C.void, len C.int, fro
 
 //export PanScionSocketReadFromAsync
 func PanScionSocketReadFromAsync(conn C.PanScionSocket, buffer *C.void, len C.int, from *C.PanUDPAddr, n *C.int, timeout_duration C.int, waker C.OnCompletionWaker, arc_conn *C.void) C.PanError {
-	// this is exactly the same impl as PanListenConnReadFromAsync() -> so share it with SocketLike interface
-
-	c := cgo.Handle(conn).Value().(pan.ScionSocket)
-	p := unsafe.Slice((*byte)(unsafe.Pointer(buffer)), len)
-
-	// Set read deadline to zero for non-blocking read
-	if err := c.SetReadDeadline(time.Now()); err != nil {
-		// fmt.Println("Error setting read deadline:", err)
-		return C.PAN_ERR_FAILED
-	}
-
-	// Try to read
-	read, add, err := c.ReadFrom(p)
-
-	if err != nil {
-		/*okk := reliable.IsDispatcherError(err)
-		ook := errors.Is(err, io.EOF)
-		fmt.Println("is_dispatcher_error: ", okk, " is EOF: ", ook)*/
-		/*eerr := err
-		for eerr != nil {
-			fmt.Println(reflect.ValueOf(eerr).Type())
-			eerr = errors.Unwrap(eerr)
-		}*/
-
-		/*
-		   // IsTimeout returns whether err is or is caused by a timeout error.
-		   func IsTimeout(err error) bool {
-		   	var t interface{ Timeout() bool }
-		   	return errors.As(err, &t) && t.Timeout()
-		   }
-
-		   // IsTemporary returns whether err is or is caused by a temporary error.
-		   func IsTemporary(err error) bool
-		*/
-
-		var t interface{ Timeout() bool } // actually it is 'serrors.basicError' but i dont want to add scionproto as a dependency
-
-		if errors.As(err, &t) {
-
-			if t.Timeout() {
-				// Read would block in non-blocking mode
-
-				// Launch a goroutine for non-blocking read
-				var chann01 chan tuple01
-				{
-					mu01.Lock()
-					chann01 = chann01s[uintptr(conn)]
-					mu01.Unlock()
-				}
-				chann01 <- tuple01{p, c, from, nil, n, waker, arc_conn}
-
-				return C.PAN_ERR_WOULDBLOCK
-				// return Pending
-			} // if Timeout()
-		} else {
-			// fmt.Println("Error on initial read:", err)
-			// return error  other than timeout
-			return C.PAN_ERR_FAILED
-		}
-	} else {
-		// Read successful
-		// fmt.Printf("Read %d bytes: %s\n", n, buffer[:read])
-
-		if add != nil {
-			*(*C.PanUDPAddr)(unsafe.Pointer(from)) = C.PanUDPAddr(cgo.NewHandle(add))
-		}
-		if n != nil {
-			*(*C.int)(unsafe.Pointer(n)) = C.int(read)
-		}
-
-		return C.PAN_ERR_OK
-
-	}
-
-	return C.PAN_ERR_OK
+	c := cgo.Handle(conn)
+	return PanSocketLikeReadFromAsyncImpl(c, buffer, len, from, n, timeout_duration, waker, arc_conn)
 }
 
-//export PanScionSocketReadFromAsyncVia
-func PanScionSocketReadFromAsyncVia(conn C.PanScionSocket, buffer *C.void, len C.int, from *C.PanUDPAddr, path *C.PanPath, n *C.int, timeout_duration C.int, waker C.OnCompletionWaker, arc_conn *C.void) C.PanError {
-	//  share the impl with listenConn
-	c := cgo.Handle(conn).Value().(pan.ScionSocket)
+//export PanScionSocketWriteToAsync
+func PanScionSocketWriteToAsync(
+	conn C.PanScionSocket, buffer *C.cvoid_t, len C.int, to C.PanUDPAddr, n *C.int, timeout C.int, waker C.OnCompletionWaker, arc_conn *C.void) C.PanError {
+
+	c := cgo.Handle(conn)
+	return PanSocketLikeWriteToAsyncImpl(c, buffer, len, to, n, timeout, waker, arc_conn)
+}
+
+//export PanScionSocketWriteToViaAsync
+func PanScionSocketWriteToViaAsync(
+	conn C.PanScionSocket, buffer *C.cvoid_t, len C.int, to C.PanUDPAddr, path C.PanPath, n *C.int, timeout C.int, waker C.OnCompletionWaker, arc_conn *C.void) C.PanError {
+
+	c := cgo.Handle(conn)
+	return PanSocketLikeWriteToViaAsyncImpl(c, buffer, len, to, path, n, timeout, waker, arc_conn)
+}
+
+func PanSocketLikeReadFromAsyncViaImpl(ch cgo.Handle, buffer *C.void, len C.int, from *C.PanUDPAddr, path *C.PanPath, n *C.int, timeout_duration C.int, waker C.OnCompletionWaker, arc_conn *C.void) C.PanError {
+
+	c := ch.Value().(SocketLike)
 	p := unsafe.Slice((*byte)(unsafe.Pointer(buffer)), len)
 
 	// Set read deadline to zero for non-blocking read
@@ -854,6 +836,7 @@ func PanScionSocketReadFromAsyncVia(conn C.PanScionSocket, buffer *C.void, len C
 				var chann01 chan tuple01
 				{
 					mu01.Lock()
+					conn := C.PanScionSocket(ch)
 					chann01 = chann01s[uintptr(conn)]
 					mu01.Unlock()
 				}
@@ -889,6 +872,57 @@ func PanScionSocketReadFromAsyncVia(conn C.PanScionSocket, buffer *C.void, len C
 	}
 
 	panic("unreachable")
+}
+
+//export PanScionSocketReadFromAsyncVia
+func PanScionSocketReadFromAsyncVia(conn C.PanScionSocket, buffer *C.void, len C.int, from *C.PanUDPAddr, path *C.PanPath, n *C.int, timeout_duration C.int, waker C.OnCompletionWaker, arc_conn *C.void) C.PanError {
+	c := cgo.Handle(conn)
+	return PanSocketLikeReadFromAsyncViaImpl(c, buffer, len, from, path, n, timeout_duration, waker, arc_conn)
+}
+
+//export PanScionSocketClose
+func PanScionSocketClose(conn C.PanScionSocket) C.PanError {
+	handle := cgo.Handle(conn)
+	return SocketLikeCloseImpl(handle)
+}
+
+/**
+\brief Wrapper for `(pan.ListenConn).SetDeadline`
+\param[in] conn Connection to set the deadline on.
+\param[in] t is the number milliseconds the deadline is set in the future.
+\ingroup listen_conn
+*/
+//export PanScionSocketSetDeadline
+func PanScionSocketSetDeadline(conn C.PanScionSocket, t C.uint32_t) C.PanError {
+	c := cgo.Handle(conn).Value().(pan.ScionSocket)
+	c.SetDeadline(time.Now().Add(time.Duration(t) * time.Millisecond))
+	return C.PAN_ERR_OK
+}
+
+/**
+\brief Wrapper for `(pan.ListenConn).SetReadDeadline`
+\param[in] conn Connection to set the deadline on.
+\param[in] t is the number milliseconds the deadline is set in the future.
+\ingroup listen_conn
+*/
+//export PanScionSocketSetReadDeadline
+func PanScionSocketSetReadDeadline(conn C.PanScionSocket, t C.uint32_t) C.PanError {
+	c := cgo.Handle(conn).Value().(pan.ListenConn)
+	c.SetReadDeadline(time.Now().Add(time.Duration(t) * time.Millisecond))
+	return C.PAN_ERR_OK
+}
+
+/**
+\brief Wrapper for `(pan.ListenConn).SetWriteDeadline`
+\param[in] conn Connection to set the deadline on.
+\param[in] t is the number milliseconds the deadline is set in the future.
+\ingroup listen_conn
+*/
+//export PanScionSocketSetWriteDeadline
+func PanScionSocketSetWriteDeadline(conn C.PanScionSocket, t C.uint32_t) C.PanError {
+	c := cgo.Handle(conn).Value().(pan.ListenConn)
+	c.SetWriteDeadline(time.Now().Add(time.Duration(t) * time.Millisecond))
+	return C.PAN_ERR_OK
 }
 
 ////////////////
@@ -1000,79 +1034,8 @@ func PanListenConnReadFrom(
 */
 //export PanListenConnReadFromAsync
 func PanListenConnReadFromAsync(conn C.PanListenConn, buffer *C.void, len C.int, from *C.PanUDPAddr, n *C.int, timeout_duration C.int, waker C.OnCompletionWaker, arc_conn *C.void) C.PanError {
-	c := cgo.Handle(conn).Value().(pan.ListenConn)
-	p := unsafe.Slice((*byte)(unsafe.Pointer(buffer)), len)
-
-	// Set read deadline to zero for non-blocking read
-	if err := c.SetReadDeadline(time.Now()); err != nil {
-		// fmt.Println("Error setting read deadline:", err)
-		return C.PAN_ERR_FAILED
-	}
-
-	// Try to read
-	read, add, err := c.ReadFrom(p)
-
-	if err != nil {
-		/*okk := reliable.IsDispatcherError(err)
-		ook := errors.Is(err, io.EOF)
-		fmt.Println("is_dispatcher_error: ", okk, " is EOF: ", ook)*/
-		/*eerr := err
-		for eerr != nil {
-			fmt.Println(reflect.ValueOf(eerr).Type())
-			eerr = errors.Unwrap(eerr)
-		}*/
-
-		/*
-		   // IsTimeout returns whether err is or is caused by a timeout error.
-		   func IsTimeout(err error) bool {
-		   	var t interface{ Timeout() bool }
-		   	return errors.As(err, &t) && t.Timeout()
-		   }
-
-		   // IsTemporary returns whether err is or is caused by a temporary error.
-		   func IsTemporary(err error) bool
-		*/
-
-		var t interface{ Timeout() bool } // actually it is 'serrors.basicError' but i dont want to add scionproto as a dependency
-
-		if errors.As(err, &t) {
-
-			if t.Timeout() {
-				// Read would block in non-blocking mode
-
-				// Launch a goroutine for non-blocking read
-				var chann01 chan tuple01
-				{
-					mu01.Lock()
-					chann01 = chann01s[uintptr(conn)]
-					mu01.Unlock()
-				}
-				chann01 <- tuple01{p, c, from, nil, n, waker, arc_conn}
-
-				return C.PAN_ERR_WOULDBLOCK
-				// return Pending
-			} // if Timeout()
-		} else {
-			// fmt.Println("Error on initial read:", err)
-			// return error  other than timeout
-			return C.PAN_ERR_FAILED
-		}
-	} else {
-		// Read successful
-		// fmt.Printf("Read %d bytes: %s\n", n, buffer[:read])
-
-		if add != nil {
-			*(*C.PanUDPAddr)(unsafe.Pointer(from)) = C.PanUDPAddr(cgo.NewHandle(add))
-		}
-		if n != nil {
-			*(*C.int)(unsafe.Pointer(n)) = C.int(read)
-		}
-
-		return C.PAN_ERR_OK
-
-	}
-
-	return C.PAN_ERR_OK
+	c := cgo.Handle(conn)
+	return PanSocketLikeReadFromAsyncImpl(c, buffer, len, from, n, timeout_duration, waker, arc_conn)
 }
 
 // ListenConn ReadFrom
@@ -1163,64 +1126,8 @@ func fcn01(chann01 chan tuple01) {
 
 //export PanListenConnReadFromAsyncVia
 func PanListenConnReadFromAsyncVia(conn C.PanListenConn, buffer *C.void, len C.int, from *C.PanUDPAddr, path *C.PanPath, n *C.int, timeout_duration C.int, waker C.OnCompletionWaker, arc_conn *C.void) C.PanError {
-	c := cgo.Handle(conn).Value().(pan.ListenConn)
-	p := unsafe.Slice((*byte)(unsafe.Pointer(buffer)), len)
-
-	// Set read deadline to zero for non-blocking read
-	if err := c.SetReadDeadline(time.Now()); err != nil {
-		// fmt.Println("Error setting read deadline:", err)
-		return C.PAN_ERR_FAILED
-	}
-
-	// Try to read
-	read, add, from_path, err := c.ReadFromVia(p)
-
-	if err != nil {
-
-		var t interface{ Timeout() bool } // actually it is 'serrors.basicError' but i dont want to add scionproto as a dependency
-
-		if errors.As(err, &t) {
-
-			if t.Timeout() {
-				// Read would block in non-blocking mode
-				var chann01 chan tuple01
-				{
-					mu01.Lock()
-					chann01 = chann01s[uintptr(conn)]
-					mu01.Unlock()
-				}
-
-				chann01 <- tuple01{p, c, from, path, n, waker, arc_conn}
-
-				// Launch a goroutine for non-blocking read
-
-				return C.PAN_ERR_WOULDBLOCK
-				// return Pending
-			} // if Timeout()
-		} else {
-			// fmt.Println("Error on initial read:", err)
-			// return error  other than timeout
-			return C.PAN_ERR_FAILED
-		}
-	} else {
-		// Read successful
-		// fmt.Printf("Read %d bytes: %s\n", n, buffer[:read])
-
-		if from != nil {
-			*(*C.PanUDPAddr)(unsafe.Pointer(from)) = C.PanUDPAddr(cgo.NewHandle(add))
-		}
-		if n != nil {
-			*(*C.int)(unsafe.Pointer(n)) = C.int(read)
-		}
-		if path != nil {
-			*(*C.PanPath)(unsafe.Pointer(path)) = C.PanPath(cgo.NewHandle(from_path))
-		}
-
-		return C.PAN_ERR_OK
-
-	}
-
-	panic("unreachable")
+	c := cgo.Handle(conn)
+	return PanSocketLikeReadFromAsyncViaImpl(c, buffer, len, from, path, n, timeout_duration, waker, arc_conn)
 }
 
 /**
@@ -1305,11 +1212,83 @@ func PanListenConnWriteTo(
 	return C.PAN_ERR_OK
 }
 
-//export PanListenConnWriteToAsync
-func PanListenConnWriteToAsync(
-	conn C.PanListenConn, buffer *C.cvoid_t, len C.int, to C.PanUDPAddr, n *C.int, timeout C.int, waker C.OnCompletionWaker, arc_conn *C.void) C.PanError {
+func PanSocketLikeWriteToViaAsyncImpl(
+	ch cgo.Handle, buffer *C.cvoid_t, len C.int, to C.PanUDPAddr, path C.PanPath, n *C.int, timeout C.int, waker C.OnCompletionWaker, arc_conn *C.void) C.PanError {
 
-	c := cgo.Handle(conn).Value().(pan.ListenConn)
+	c := ch.Value().(SocketLike)
+	p := C.GoBytes(unsafe.Pointer(buffer), len)
+	addr := cgo.Handle(to).Value().(pan.UDPAddr)
+	via := cgo.Handle(path).Value().(*pan.Path)
+
+	// Set write deadline to zero for non-blocking write
+	/*if err := c.SetWriteDeadline(time.Now()); err != nil {
+		fmt.Println("Error setting write deadline:", err)
+		return C.PAN_ERR_FAILED
+	}
+
+	written, err := c.WriteToVia(p, addr,via)
+	*/
+	//if err != nil {
+	var err error
+	var written = 0
+	if true {
+
+		//var t interface{ Timeout() bool }
+
+		//if errors.As(err, &t) {
+		if true {
+
+			//if t.Timeout() {
+			if true {
+				// dispatch a non-blocking write operation and pass along the required parameters
+				var chann00 chan tuple00
+				{
+					mu00.Lock()
+					conn := C.PanScionSocket(ch)
+					chann00 = chann00s[uintptr(conn)]
+					mu01.Unlock()
+				}
+
+				chann00 <- tuple00{p, addr, via, n, waker, c, arc_conn}
+
+				return C.PAN_ERR_WOULDBLOCK
+			} else {
+				if errors.Is(err, os.ErrDeadlineExceeded) {
+					return C.PAN_ERR_DEADLINE
+				} else if errors.Is(err, pan.ErrNoPath) {
+					return C.PAN_ERR_NO_PATH
+				} else {
+					return C.PAN_ERR_FAILED
+				}
+			}
+
+		} else {
+
+			if errors.Is(err, os.ErrDeadlineExceeded) {
+				return C.PAN_ERR_DEADLINE
+			} else if errors.Is(err, pan.ErrNoPath) {
+				return C.PAN_ERR_NO_PATH
+			} else {
+				return C.PAN_ERR_FAILED
+			}
+		}
+
+	} else { // write completed immediately
+
+		if n != nil {
+			*(*C.int)(unsafe.Pointer(n)) = C.int(written)
+		}
+
+		return C.PAN_ERR_OK
+	}
+
+	panic("unreachable")
+}
+
+func PanSocketLikeWriteToAsyncImpl(
+	ch cgo.Handle, buffer *C.cvoid_t, len C.int, to C.PanUDPAddr, n *C.int, timeout C.int, waker C.OnCompletionWaker, arc_conn *C.void) C.PanError {
+
+	c := ch.Value().(SocketLike)
 	p := C.GoBytes(unsafe.Pointer(buffer), len)
 	addr := cgo.Handle(to).Value().(pan.UDPAddr)
 
@@ -1337,6 +1316,7 @@ func PanListenConnWriteToAsync(
 				var chann00 chan tuple00
 				{
 					mu00.Lock()
+					conn := C.PanScionSocket(ch)
 					chann00 = chann00s[uintptr(conn)]
 					mu00.Unlock()
 				}
@@ -1374,6 +1354,14 @@ func PanListenConnWriteToAsync(
 	}
 
 	panic("unreachable")
+}
+
+//export PanListenConnWriteToAsync
+func PanListenConnWriteToAsync(
+	conn C.PanListenConn, buffer *C.cvoid_t, len C.int, to C.PanUDPAddr, n *C.int, timeout C.int, waker C.OnCompletionWaker, arc_conn *C.void) C.PanError {
+
+	c := cgo.Handle(conn)
+	return PanSocketLikeWriteToAsyncImpl(c, buffer, len, to, n, timeout, waker, arc_conn)
 }
 
 type tuple00 struct {
@@ -1442,73 +1430,8 @@ func fcn00(chann00 chan tuple00) {
 func PanListenConnWriteToViaAsync(
 	conn C.PanListenConn, buffer *C.cvoid_t, len C.int, to C.PanUDPAddr, path C.PanPath, n *C.int, timeout C.int, waker C.OnCompletionWaker, arc_conn *C.void) C.PanError {
 
-	c := cgo.Handle(conn).Value().(pan.ListenConn)
-	p := C.GoBytes(unsafe.Pointer(buffer), len)
-	addr := cgo.Handle(to).Value().(pan.UDPAddr)
-	via := cgo.Handle(path).Value().(*pan.Path)
-
-	// Set write deadline to zero for non-blocking write
-	/*if err := c.SetWriteDeadline(time.Now()); err != nil {
-		fmt.Println("Error setting write deadline:", err)
-		return C.PAN_ERR_FAILED
-	}
-
-	written, err := c.WriteToVia(p, addr,via)
-	*/
-	//if err != nil {
-	var err error
-	var written = 0
-	if true {
-
-		//var t interface{ Timeout() bool }
-
-		//if errors.As(err, &t) {
-		if true {
-
-			//if t.Timeout() {
-			if true {
-				// dispatch a non-blocking write operation and pass along the required parameters
-				var chann00 chan tuple00
-				{
-					mu00.Lock()
-					chann00 = chann00s[uintptr(conn)]
-					mu01.Unlock()
-				}
-
-				chann00 <- tuple00{p, addr, via, n, waker, c, arc_conn}
-
-				return C.PAN_ERR_WOULDBLOCK
-			} else {
-				if errors.Is(err, os.ErrDeadlineExceeded) {
-					return C.PAN_ERR_DEADLINE
-				} else if errors.Is(err, pan.ErrNoPath) {
-					return C.PAN_ERR_NO_PATH
-				} else {
-					return C.PAN_ERR_FAILED
-				}
-			}
-
-		} else {
-
-			if errors.Is(err, os.ErrDeadlineExceeded) {
-				return C.PAN_ERR_DEADLINE
-			} else if errors.Is(err, pan.ErrNoPath) {
-				return C.PAN_ERR_NO_PATH
-			} else {
-				return C.PAN_ERR_FAILED
-			}
-		}
-
-	} else { // write completed immediately
-
-		if n != nil {
-			*(*C.int)(unsafe.Pointer(n)) = C.int(written)
-		}
-
-		return C.PAN_ERR_OK
-	}
-
-	panic("unreachable")
+	c := cgo.Handle(conn)
+	return PanSocketLikeWriteToViaAsyncImpl(c, buffer, len, to, path, n, timeout, waker, arc_conn)
 }
 
 /**
@@ -1607,7 +1530,12 @@ PanDeleteHandle().
 //export PanListenConnClose
 func PanListenConnClose(conn C.PanListenConn) C.PanError {
 	handle := cgo.Handle(conn)
-	err := handle.Value().(pan.ListenConn).Close()
+	return SocketLikeCloseImpl(handle)
+}
+
+func SocketLikeCloseImpl(handle cgo.Handle) C.PanError {
+	conn := C.PanScionSocket(handle)
+	err := handle.Value().(SocketLike).Close()
 	{
 		mu00.Lock()
 

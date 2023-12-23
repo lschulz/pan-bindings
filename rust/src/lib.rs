@@ -57,12 +57,32 @@ impl IsSameType<Conn> for ListenConn {
     const IS_SAME_TYPE: bool = false;
 }
 
+impl IsSameType<ScionSocket> for ListenConn {
+    const IS_SAME_TYPE: bool = false;
+}
+
 impl IsSameType<ListenConn> for Conn {
     const IS_SAME_TYPE: bool = false;
 }
 
 impl IsSameType<Conn> for Conn {
     const IS_SAME_TYPE: bool = true;
+}
+
+impl IsSameType<ScionSocket> for Conn {
+    const IS_SAME_TYPE: bool = false;
+}
+
+impl IsSameType<ScionSocket> for ScionSocket {
+    const IS_SAME_TYPE: bool = true;
+}
+
+impl IsSameType<ListenConn> for ScionSocket {
+    const IS_SAME_TYPE: bool = false;
+}
+
+impl IsSameType<Conn> for ScionSocket {
+    const IS_SAME_TYPE: bool = false;
 }
 
 //mod bindings;
@@ -1009,6 +1029,232 @@ impl GoHandleOwner for ListenSockAdapter {
 }
 
 #[derive(Debug)]
+pub struct ScionSocket {
+    h: Pan_GoHandle,
+
+    mtx_read: Arc<Mutex<ReadState>>,
+    mtx_write: Arc<Mutex<WriteState>>,
+
+    async_read_timeout: std::os::raw::c_int,  // milliseconds
+    async_write_timeout: std::os::raw::c_int, // milliseconds
+}
+
+impl GoHandleOwner for ScionSocket {
+    unsafe fn as_bool(&self) -> bool {
+        self.h.isValid()
+    }
+    unsafe fn is_valid(&self) -> bool {
+        self.h.isValid()
+    }
+    unsafe fn get_handle(&self) -> usize {
+        let retn: usize = self.h.get() as usize;
+        retn
+    }
+    unsafe fn release_handle(&mut self) -> usize {
+        let prt: usize = self.h.release() as usize;
+        prt
+    }
+}
+
+impl Connection for ScionSocket {
+    fn get_rstate(s: Arc<Mutex<Self>>) -> Arc<Mutex<ReadState>> {
+        s.lock().unwrap().mtx_read.clone()
+    }
+
+    fn get_wstate(s: Arc<Mutex<Self>>) -> Arc<Mutex<WriteState>> {
+        s.lock().unwrap().mtx_write.clone()
+    }
+
+    fn rstate(&mut self) -> Arc<Mutex<ReadState>> {
+        self.mtx_read.clone()
+    }
+
+    fn wstate(&mut self) -> Arc<Mutex<WriteState>> {
+        self.mtx_write.clone()
+    }
+
+    fn get_async_read_timeout(&mut self) -> &mut std::os::raw::c_int {
+        &mut self.async_read_timeout
+    }
+    fn get_async_write_timeout(&mut self) -> &mut std::os::raw::c_int {
+        &mut self.async_write_timeout
+    }
+}
+
+impl Default for ScionSocket {
+    fn default() -> Self {
+        let rstate = ReadState::Initial; // Assuming ReadState has an Initial variant
+        let wstate = WriteState::Initial; // Assuming WriteState has an Initial variant
+
+        let mtx_r = Arc::new(Mutex::new(rstate));
+        let mtx_w = Arc::new(Mutex::new(wstate));
+
+        let mut handle= unsafe { Pan_GoHandle::new1(  PanNewScionSocket2() as u64) };
+      
+        Self {
+            h: handle,
+
+            mtx_read: mtx_r,
+            mtx_write: mtx_w,
+            async_read_timeout: 100,  //ms
+            async_write_timeout: 100, //ms
+        }
+    }
+}
+
+impl ScionSocket {
+    pub fn get_local_addr(&self) -> snet::SocketAddr{
+        unsafe{
+     let ptr =      PanScionSocketGetLocalAddr(self.get_handle() ) ;
+     let c_str = CStr::from_ptr(ptr);
+           <snet::SocketAddr as FromStr>::from_str(  &c_str.to_string_lossy() ).unwrap()
+        }
+    }
+
+    pub fn bind(&mut self, listen_addr: &str) -> Result<(), panError> {
+      unsafe {
+        
+         let   res = PanScionSocketBind(self.get_handle(), listen_addr.as_ptr() as *const i8);
+        
+        match res {
+            PAN_ERR_OK => Ok(()),
+            _ => Err(panError(res)),
+        }
+    }
+    }
+
+    pub async fn async_write_some_to(
+        this: Arc<Mutex<ScionSocket>>,
+        send_buff: &[u8],
+        to: PanUDPAddr,
+    ) -> Result<i32, panError> {
+        unsafe { async_write_some_impl::<ScionSocket>(this, send_buff, to, None).await }
+    }
+
+    pub async fn async_write_some_to_via(
+        this: Arc<Mutex<ScionSocket>>,
+        send_buff: &Vec<u8>,
+        to: PanUDPAddr,
+        via: PanPath,
+    ) -> Result<i32, panError> {
+        unsafe { async_write_some_impl::<ScionSocket>(this, send_buff, to, Some(via)).await }
+    }
+
+    pub async fn async_write_to(
+        this: Arc<Mutex<ScionSocket>>,
+        send_buff: &[u8],
+        to: PanUDPAddr,
+    ) -> Result<(), Box<dyn Error>> {
+        async_write_impl::<ScionSocket>(this, send_buff, to, None).await
+    }
+
+    pub async fn async_write_to_via(
+        this: Arc<Mutex<ScionSocket>>,
+        send_buff: &[u8],
+        to: PanUDPAddr,
+        via: PanPath,
+    ) -> Result<(), Box<dyn Error>> {
+        async_write_impl::<ScionSocket>(this, send_buff, to, Some(via)).await
+    }
+
+    pub fn async_write_to2<'a>(
+        this: Arc<Mutex<ScionSocket>>,
+        send_buff: &'a [u8],
+        to: &Endpoint,
+    ) -> std::pin::Pin<Box<dyn futures::Future<Output = ()> + std::marker::Send + Sync + 'a>> {
+        unsafe { async_write_impl2::<ScionSocket>(this, send_buff, to.get_handle(), None) }
+    }
+
+    pub fn async_write_to_via2<'a>(
+        this: Arc<Mutex<ScionSocket>>,
+        send_buff: &'a [u8],
+        to: PanUDPAddr,
+        via: PanPath,
+    ) -> std::pin::Pin<Box<dyn futures::Future<Output = ()> + std::marker::Send + 'a>> {
+        async_write_impl2::<ScionSocket>(this, send_buff, to, Some(via))
+    }
+
+    pub fn async_read2(this: Arc<Mutex<ScionSocket>>, recv_buf: &mut [u8]) -> ReadFuture {
+        unsafe { async_read_impl::<ScionSocket>(this, recv_buf) }
+    }
+
+    // actually async_read_some
+    pub async fn async_read(
+        this: Arc<Mutex<ScionSocket>>,
+        recv_buff: &mut Vec<u8>,
+    ) -> Result<i32, panError> {
+        match unsafe { async_read_impl::<ScionSocket>(this, recv_buff).await } {
+            Ok((i32, _, _)) => Ok(i32),
+            Err(e) => Err(e),
+        }
+    }
+
+    // actually async_read_some_from
+    pub async fn async_read_from(
+        this: Arc<Mutex<ScionSocket>>,
+        recv_buff: &mut Vec<u8>,
+    ) -> Result<(i32, PanUDPAddr), panError> {
+        match unsafe { async_read_impl::<ScionSocket>(this, recv_buff).await } {
+            Ok((i32, from, _)) => Ok((i32, from)),
+            Err(e) => Err(e),
+        }
+    }
+
+    // actually async_read_some_from_via
+    pub async fn async_read_from_via(
+        this: Arc<Mutex<ScionSocket>>,
+        recv_buff: &mut Vec<u8>,
+    ) -> Result<(i32, PanUDPAddr, PanPath), panError> {
+        unsafe { async_read_impl::<ScionSocket>(this, recv_buff).await }
+    }
+
+    /*
+    pub async fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
+        self.stream.read(buffer).await
+    }
+
+    pub async fn write(&mut self, data: &[u8]) -> io::Result<usize> {
+        self.stream.write(data).await
+    }*/
+
+    pub fn set_deadline(&mut self, t: &std::time::Duration) {
+        unsafe {
+            if !self.is_valid() {
+                panic!(" attempt to invoke method on invalid ListenConn ");
+            }
+            PanScionSocketSetDeadline(self.get_handle(), t.as_millis().try_into().unwrap());
+        }
+    }
+
+    pub fn set_read_deadline(&mut self, t: &std::time::Duration) {
+        unsafe {
+            if !self.is_valid() {
+                panic!(" attempt to invoke method on invalid ListenConn ");
+            }
+            PanScionSocketSetReadDeadline(self.get_handle(), t.as_millis().try_into().unwrap());
+        }
+    }
+
+    pub fn set_write_deadline(&mut self, t: &std::time::Duration) {
+        unsafe {
+            if !self.is_valid() {
+                panic!(" attempt to invoke method on invalid ListenConn ");
+            }
+            PanScionSocketSetWriteDeadline(self.get_handle(), t.as_millis().try_into().unwrap());
+        }
+    }
+
+    pub fn close(&mut self) {
+        unsafe {
+            if self.is_valid() {
+                PanScionSocketClose(self.get_handle());
+                self.h.reset1();
+            }
+        }
+    }
+}
+
+#[derive(Debug)]
 pub struct ListenConn {
     h: Pan_GoHandle,
     selector: Option<Box<dyn ReplySelector + Send + Sync>>,
@@ -1483,6 +1729,7 @@ where
     C: Connection,
     C: IsSameType<Conn>,
     C: IsSameType<ListenConn>,
+    C: IsSameType<ScionSocket>,
 {
     let mut handle = 0;
     let mut write_tout = 0;
@@ -1517,6 +1764,33 @@ where
             );
         } else {
             err = PanListenConnWriteToViaAsync(
+                handle,
+                send_buff.as_ptr() as *const c_void,
+                send_buff.len() as i32,
+                to,
+                via.unwrap(),
+                &mut *_write_future.bytes_written as *mut i32,
+                write_tout,
+                ffn,
+                Arc::<std::sync::Mutex<WriteState>>::into_raw(C::get_wstate(this).clone())
+                    as *mut c_void,
+            );
+        }
+    } else if <C as IsSameType<ScionSocket>>::IS_SAME_TYPE {
+        if via.is_none() {
+            err = PanScionSocketWriteToAsync(
+                handle,
+                send_buff.as_ptr() as *const c_void,
+                send_buff.len() as i32,
+                to,
+                &mut *_write_future.bytes_written as *mut i32,
+                write_tout,
+                ffn,
+                Arc::<std::sync::Mutex<WriteState>>::into_raw(C::get_wstate(this).clone())
+                    as *mut c_void,
+            );
+        } else {
+            err = PanScionSocketWriteToViaAsync(
                 handle,
                 send_buff.as_ptr() as *const c_void,
                 send_buff.len() as i32,
@@ -1603,6 +1877,7 @@ where
     C: Connection,
     C: IsSameType<Conn>,
     C: IsSameType<ListenConn>,
+    C: IsSameType<ScionSocket>,
 {
     let bytes_to_send: i32 = send_buff.len() as i32;
     let mut bytes_written: i32 = 0;
@@ -1636,6 +1911,7 @@ async unsafe fn recursive_write<C>(
     C: Connection,
     C: IsSameType<Conn>,
     C: IsSameType<ListenConn>,
+    C: IsSameType<ScionSocket>,
 {
     if bytes_written >= bytes_to_send {
         return;
@@ -1682,6 +1958,7 @@ where
     C: Connection,
     C: IsSameType<Conn>,
     C: IsSameType<ListenConn>,
+    C: IsSameType<ScionSocket>,
 {
     unsafe { recursive_write(this, send_buff, to, via, 0, send_buff.len()) }
 }
@@ -1698,6 +1975,7 @@ where
     C: Connection,
     C: IsSameType<ListenConn>,
     C: IsSameType<Conn>,
+    C: IsSameType<ScionSocket>,
 {
     let mut handle = 0;
     let mut read_tout = 0;
@@ -1741,6 +2019,19 @@ where
             handle,
             buff.as_mut_ptr() as *mut c_void,
             buff.len() as i32,
+            p,
+            b,
+            read_tout,
+            ffn,
+            Arc::<std::sync::Mutex<ReadState>>::into_raw(C::get_rstate(this.clone()))
+                as *mut c_void,
+        );
+    } else if <C as IsSameType<ScionSocket>>::IS_SAME_TYPE {
+        err = PanScionSocketReadFromAsyncVia(
+            handle,
+            buff.as_mut_ptr() as *mut c_void,
+            buff.len() as i32,
+            f,
             p,
             b,
             read_tout,
@@ -1797,11 +2088,9 @@ where
 }
 
 impl ListenConn {
-
-  pub fn set_reply_selector(&mut self, s: Box<dyn ReplySelector + Send +Sync> )
-  {
-    self.selector = Some( s);
-  }
+    pub fn set_reply_selector(&mut self, s: Box<dyn ReplySelector + Send + Sync>) {
+        self.selector = Some(s);
+    }
 
     pub async fn async_write_some_to(
         this: Arc<Mutex<ListenConn>>,

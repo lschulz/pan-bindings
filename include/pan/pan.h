@@ -236,8 +236,39 @@ extern PanSelector PanNewCSelector(struct PanSelectorCallbacks* callbacks, uintp
 \ingroup reply_selector
 */
 extern PanReplySelector PanNewCReplySelector(struct PanReplySelCallbacks* callbacks, uintptr_t user);
-extern PanError PanNewScionSocket(cchar_t* listen, PanScionSocket* socket);
-extern PanError PanNewScionSocket2(PanScionSocket* socket);
+extern PanScionSocket PanNewScionSocket(cchar_t* listen);
+extern PanScionSocket PanNewScionSocket2();
+extern PanError PanScionSocketBind(PanScionSocket socket, cchar_t* listen);
+extern char* PanScionSocketGetLocalAddr(PanScionSocket socket);
+extern PanError PanScionSocketReadFromAsync(PanScionSocket conn, void* buffer, int len, PanUDPAddr* from, int* n, int timeout_duration, OnCompletionWaker waker, void* arc_conn);
+extern PanError PanScionSocketWriteToAsync(PanScionSocket conn, cvoid_t* buffer, int len, PanUDPAddr to, int* n, int timeout, OnCompletionWaker waker, void* arc_conn);
+extern PanError PanScionSocketWriteToViaAsync(PanScionSocket conn, cvoid_t* buffer, int len, PanUDPAddr to, PanPath path, int* n, int timeout, OnCompletionWaker waker, void* arc_conn);
+extern PanError PanScionSocketReadFromAsyncVia(PanScionSocket conn, void* buffer, int len, PanUDPAddr* from, PanPath* path, int* n, int timeout_duration, OnCompletionWaker waker, void* arc_conn);
+extern PanError PanScionSocketClose(PanScionSocket conn);
+
+/**
+\brief Wrapper for `(pan.ListenConn).SetDeadline`
+\param[in] conn Connection to set the deadline on.
+\param[in] t is the number milliseconds the deadline is set in the future.
+\ingroup listen_conn
+*/
+extern PanError PanScionSocketSetDeadline(PanScionSocket conn, uint32_t t);
+
+/**
+\brief Wrapper for `(pan.ListenConn).SetReadDeadline`
+\param[in] conn Connection to set the deadline on.
+\param[in] t is the number milliseconds the deadline is set in the future.
+\ingroup listen_conn
+*/
+extern PanError PanScionSocketSetReadDeadline(PanScionSocket conn, uint32_t t);
+
+/**
+\brief Wrapper for `(pan.ListenConn).SetWriteDeadline`
+\param[in] conn Connection to set the deadline on.
+\param[in] t is the number milliseconds the deadline is set in the future.
+\ingroup listen_conn
+*/
+extern PanError PanScionSocketSetWriteDeadline(PanScionSocket conn, uint32_t t);
 
 /**
 \brief Open a UDP socket and listen for connections.

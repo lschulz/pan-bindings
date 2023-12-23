@@ -11,6 +11,9 @@ path = "src/main.rs"
 name = "async_echo"
 path = "src/async_echo.rs"
 
+[[bin]]
+name = "async_socket_echo"
+path = "src/async_socket_echo.rs"
 
 
 [build-dependencies]
