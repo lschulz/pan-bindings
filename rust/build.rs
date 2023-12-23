@@ -78,7 +78,7 @@ println!("libdir_path: {}",libdir_path.display() );
       //  println!("cargo:rustc-link-search=../build/go");
 
         println!("cargo:rustc-link-lib=static:+bundle=go_handle");
-        println!("cargo:rustc-link-lib=static:+bundle=pan");
+        println!("cargo:rustc-link-lib=static:+bundle=pand");
         println!("cargo:rustc-link-lib=stdc++");
 
 

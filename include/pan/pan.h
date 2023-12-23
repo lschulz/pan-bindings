@@ -236,6 +236,8 @@ extern PanSelector PanNewCSelector(struct PanSelectorCallbacks* callbacks, uintp
 \ingroup reply_selector
 */
 extern PanReplySelector PanNewCReplySelector(struct PanReplySelCallbacks* callbacks, uintptr_t user);
+extern PanError PanNewScionSocket(cchar_t* listen, PanScionSocket* socket);
+extern PanError PanNewScionSocket2(PanScionSocket* socket);
 
 /**
 \brief Open a UDP socket and listen for connections.

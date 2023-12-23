@@ -40,6 +40,7 @@ typedef uint32_t PanError;
 typedef uintptr_t PanUDPAddr;
 typedef uintptr_t PanConn;
 typedef uintptr_t PanListenConn;
+typedef uintptr_t PanScionSocket;
 typedef uintptr_t PanPath;
 typedef uintptr_t PanPathFingerprint;
 typedef uintptr_t PanPathInterface;

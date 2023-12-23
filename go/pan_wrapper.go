@@ -622,6 +622,275 @@ type SocketLike interface {
 	SetReadDeadline(t time.Time) error
 }
 
+//////////////////////////////////////////////
+///// SCION SOCKET
+////////////////////////////////////////////////
+
+//export PanNewScionSocket
+func PanNewScionSocket(listen *C.cchar_t, socket *C.PanScionSocket) C.PanError {
+	local, err := netip.ParseAddrPort(C.GoString(listen))
+	if err != nil {
+		return C.PAN_ERR_ADDR_SYNTAX
+	}
+	sock, err := pan.NewScionSocket(context.Background(), local)
+	if err != nil {
+		return C.PAN_ERR_FAILED
+	}
+	ptr := (*C.PanScionSocket)(unsafe.Pointer(socket))
+	p := C.PanScionSocket(cgo.NewHandle(sock))
+	*ptr = p
+	return C.PAN_ERR_OK
+}
+
+//export PanNewScionSocket2
+func PanNewScionSocket2(socket *C.PanScionSocket) C.PanError {
+
+	sock, err := pan.NewScionSocket2()
+	if err != nil {
+		return C.PAN_ERR_FAILED
+	}
+	ptr := (*C.PanScionSocket)(unsafe.Pointer(socket))
+	p := C.PanScionSocket(cgo.NewHandle(sock))
+	*ptr = p
+	return C.PAN_ERR_OK
+}
+
+//export PanScionSocketBind
+func PanScionSocketBind(socket C.PanScionSocket, listen *C.cchar_t) C.PanError {
+	s := cgo.Handle(socket).Value().(pan.ScionSocket)
+	local := C.GoString(listen)
+	addr, err := netip.ParseAddrPort(local)
+	if err != nil {
+		return C.PAN_ERR_ADDR_SYNTAX
+	}
+
+	if err = s.Bind(context.Background(), addr); err != nil {
+		return C.PAN_ERR_FAILED
+	}
+	return C.PAN_ERR_OK
+
+}
+
+func PanSocketLikeReadFromAsyncImpl(c SocketLike, buffer *C.void, len C.int, from *C.PanUDPAddr, n *C.int, timeout_duration C.int, waker C.OnCompletionWaker, arc_conn *C.void) C.PanError {
+	// this is exactly the same impl as PanListenConnReadFromAsync() -> so share it with SocketLike interface
+
+	p := unsafe.Slice((*byte)(unsafe.Pointer(buffer)), len)
+
+	// Set read deadline to zero for non-blocking read
+	if err := c.SetReadDeadline(time.Now()); err != nil {
+		// fmt.Println("Error setting read deadline:", err)
+		return C.PAN_ERR_FAILED
+	}
+
+	// Try to read
+	read, add, err := c.ReadFrom(p)
+
+	if err != nil {
+		/*okk := reliable.IsDispatcherError(err)
+		ook := errors.Is(err, io.EOF)
+		fmt.Println("is_dispatcher_error: ", okk, " is EOF: ", ook)*/
+		/*eerr := err
+		for eerr != nil {
+			fmt.Println(reflect.ValueOf(eerr).Type())
+			eerr = errors.Unwrap(eerr)
+		}*/
+
+		/*
+		   // IsTimeout returns whether err is or is caused by a timeout error.
+		   func IsTimeout(err error) bool {
+		   	var t interface{ Timeout() bool }
+		   	return errors.As(err, &t) && t.Timeout()
+		   }
+
+		   // IsTemporary returns whether err is or is caused by a temporary error.
+		   func IsTemporary(err error) bool
+		*/
+
+		var t interface{ Timeout() bool } // actually it is 'serrors.basicError' but i dont want to add scionproto as a dependency
+
+		if errors.As(err, &t) {
+
+			if t.Timeout() {
+				// Read would block in non-blocking mode
+
+				// Launch a goroutine for non-blocking read
+				var chann01 chan tuple01
+				{
+					mu01.Lock()
+					conn := C.PanScionSocket(cgo.NewHandle(c))
+					chann01 = chann01s[uintptr(conn)]
+					mu01.Unlock()
+				}
+				chann01 <- tuple01{p, c, from, nil, n, waker, arc_conn}
+
+				return C.PAN_ERR_WOULDBLOCK
+				// return Pending
+			} // if Timeout()
+		} else {
+			// fmt.Println("Error on initial read:", err)
+			// return error  other than timeout
+			return C.PAN_ERR_FAILED
+		}
+	} else {
+		// Read successful
+		// fmt.Printf("Read %d bytes: %s\n", n, buffer[:read])
+
+		if add != nil {
+			*(*C.PanUDPAddr)(unsafe.Pointer(from)) = C.PanUDPAddr(cgo.NewHandle(add))
+		}
+		if n != nil {
+			*(*C.int)(unsafe.Pointer(n)) = C.int(read)
+		}
+
+		return C.PAN_ERR_OK
+
+	}
+
+	return C.PAN_ERR_OK
+}
+
+//export PanScionSocketReadFromAsync
+func PanScionSocketReadFromAsync(conn C.PanScionSocket, buffer *C.void, len C.int, from *C.PanUDPAddr, n *C.int, timeout_duration C.int, waker C.OnCompletionWaker, arc_conn *C.void) C.PanError {
+	// this is exactly the same impl as PanListenConnReadFromAsync() -> so share it with SocketLike interface
+
+	c := cgo.Handle(conn).Value().(pan.ScionSocket)
+	p := unsafe.Slice((*byte)(unsafe.Pointer(buffer)), len)
+
+	// Set read deadline to zero for non-blocking read
+	if err := c.SetReadDeadline(time.Now()); err != nil {
+		// fmt.Println("Error setting read deadline:", err)
+		return C.PAN_ERR_FAILED
+	}
+
+	// Try to read
+	read, add, err := c.ReadFrom(p)
+
+	if err != nil {
+		/*okk := reliable.IsDispatcherError(err)
+		ook := errors.Is(err, io.EOF)
+		fmt.Println("is_dispatcher_error: ", okk, " is EOF: ", ook)*/
+		/*eerr := err
+		for eerr != nil {
+			fmt.Println(reflect.ValueOf(eerr).Type())
+			eerr = errors.Unwrap(eerr)
+		}*/
+
+		/*
+		   // IsTimeout returns whether err is or is caused by a timeout error.
+		   func IsTimeout(err error) bool {
+		   	var t interface{ Timeout() bool }
+		   	return errors.As(err, &t) && t.Timeout()
+		   }
+
+		   // IsTemporary returns whether err is or is caused by a temporary error.
+		   func IsTemporary(err error) bool
+		*/
+
+		var t interface{ Timeout() bool } // actually it is 'serrors.basicError' but i dont want to add scionproto as a dependency
+
+		if errors.As(err, &t) {
+
+			if t.Timeout() {
+				// Read would block in non-blocking mode
+
+				// Launch a goroutine for non-blocking read
+				var chann01 chan tuple01
+				{
+					mu01.Lock()
+					chann01 = chann01s[uintptr(conn)]
+					mu01.Unlock()
+				}
+				chann01 <- tuple01{p, c, from, nil, n, waker, arc_conn}
+
+				return C.PAN_ERR_WOULDBLOCK
+				// return Pending
+			} // if Timeout()
+		} else {
+			// fmt.Println("Error on initial read:", err)
+			// return error  other than timeout
+			return C.PAN_ERR_FAILED
+		}
+	} else {
+		// Read successful
+		// fmt.Printf("Read %d bytes: %s\n", n, buffer[:read])
+
+		if add != nil {
+			*(*C.PanUDPAddr)(unsafe.Pointer(from)) = C.PanUDPAddr(cgo.NewHandle(add))
+		}
+		if n != nil {
+			*(*C.int)(unsafe.Pointer(n)) = C.int(read)
+		}
+
+		return C.PAN_ERR_OK
+
+	}
+
+	return C.PAN_ERR_OK
+}
+
+//export PanScionSocketReadFromAsyncVia
+func PanScionSocketReadFromAsyncVia(conn C.PanScionSocket, buffer *C.void, len C.int, from *C.PanUDPAddr, path *C.PanPath, n *C.int, timeout_duration C.int, waker C.OnCompletionWaker, arc_conn *C.void) C.PanError {
+	//  share the impl with listenConn
+	c := cgo.Handle(conn).Value().(pan.ScionSocket)
+	p := unsafe.Slice((*byte)(unsafe.Pointer(buffer)), len)
+
+	// Set read deadline to zero for non-blocking read
+	if err := c.SetReadDeadline(time.Now()); err != nil {
+		// fmt.Println("Error setting read deadline:", err)
+		return C.PAN_ERR_FAILED
+	}
+
+	// Try to read
+	read, add, from_path, err := c.ReadFromVia(p)
+
+	if err != nil {
+
+		var t interface{ Timeout() bool } // actually it is 'serrors.basicError' but i dont want to add scionproto as a dependency
+
+		if errors.As(err, &t) {
+
+			if t.Timeout() {
+				// Read would block in non-blocking mode
+				var chann01 chan tuple01
+				{
+					mu01.Lock()
+					chann01 = chann01s[uintptr(conn)]
+					mu01.Unlock()
+				}
+
+				chann01 <- tuple01{p, c, from, path, n, waker, arc_conn}
+
+				// Launch a goroutine for non-blocking read
+
+				return C.PAN_ERR_WOULDBLOCK
+				// return Pending
+			} // if Timeout()
+		} else {
+			// fmt.Println("Error on initial read:", err)
+			// return error  other than timeout
+			return C.PAN_ERR_FAILED
+		}
+	} else {
+		// Read successful
+		// fmt.Printf("Read %d bytes: %s\n", n, buffer[:read])
+
+		if from != nil {
+			*(*C.PanUDPAddr)(unsafe.Pointer(from)) = C.PanUDPAddr(cgo.NewHandle(add))
+		}
+		if n != nil {
+			*(*C.int)(unsafe.Pointer(n)) = C.int(read)
+		}
+		if path != nil {
+			*(*C.PanPath)(unsafe.Pointer(path)) = C.PanPath(cgo.NewHandle(from_path))
+		}
+
+		return C.PAN_ERR_OK
+
+	}
+
+	panic("unreachable")
+}
+
 ////////////////
 // ListenConn //
 ////////////////
