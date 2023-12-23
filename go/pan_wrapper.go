@@ -56,6 +56,15 @@ import (
 	// "github.com/scionproto/scion/pkg/private/serrors"
 	// "github.com/stretchr/testify/assert"
 	"github.com/netsec-ethz/scion-apps/pkg/pan"
+	// "github.com/scionproto/scion/private/app/flag"
+	// "github.com/scionproto/scion/private/app/flag"
+
+	"github.com/scionproto/scion/go/lib/daemon"
+	"github.com/scionproto/scion/go/pkg/app"
+	"github.com/scionproto/scion/go/pkg/app/flag"
+
+	//"github.com/scionproto/scion/pkg/daemon"
+	// "github.com/scionproto/scion/private/app"
 	"inet.af/netaddr"
 )
 
@@ -1697,8 +1706,18 @@ func PanConnWriteAsync(conn C.PanListenConn, buffer *C.cvoid_t, len C.int, n *C.
 	panic("unreachable")
 }
 
+var envFlags flag.SCIONEnvironment
+var service daemon.Service
+
 func init() {
 	fmt.Println("INIT CALLED")
+
+	if err := envFlags.LoadExternalVars(); err != nil {
+		panic(fmt.Sprintf("pan initialization failed: %v", err))
+	}
+	daemonAddr := envFlags.Daemon()
+
+	service = daemon.NewService(daemonAddr)
 
 	chann00 = make(chan tuple00, 1)
 	chann01 = make(chan tuple01, 1)
@@ -1709,6 +1728,25 @@ func init() {
 	go fcn01()
 	go fcn02()
 	go fcn03()
+}
+
+//export GetLocalIA
+func GetLocalIA() uint64 {
+
+	ctx, cancelF := context.WithTimeout(context.Background(), time.Second)
+	defer cancelF()
+	conn, err := service.Connect(ctx)
+	if err != nil {
+		panic(fmt.Sprintf("connecting to SCION Daemon: %v", err))
+	}
+	defer conn.Close(ctx)
+
+	info, err := app.QueryASInfo(ctx, conn)
+	if err != nil {
+		panic(fmt.Sprintf("%v", err))
+	}
+	return uint64(info.IA)
+
 }
 
 /**
