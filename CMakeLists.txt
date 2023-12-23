@@ -3,7 +3,7 @@ cmake_minimum_required(VERSION 3.16)
 project(pan-bindings VERSION 1.0 )
 set( PACKAGE_NAME "pan")
 
-set(GO_BINARY "go1.19" CACHE PATH "Path to go binary")
+set(GO_BINARY "go" CACHE PATH "Path to go binary")
 set(BUILD_CPP ON CACHE BOOL "Build the C++ bindings")
 set(BUILD_RUST ON CACHE BOOL "Build the Rust bindings")
 set(BUILD_EXAMPLES ON CACHE BOOL "Build the examples")
