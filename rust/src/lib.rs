@@ -5,6 +5,7 @@
 
 include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
 
+use byteorder::LittleEndian;
 use futures::future::{Future, TryFutureExt};
 use std::any::Any;
 
@@ -13,13 +14,20 @@ use std::collections::HashMap;
 use std::convert::TryInto;
 use std::ffi::CStr;
 use std::fmt;
+// use std::os::unix::net::UnixDatagram;
+use async_std::os::unix::net::UnixDatagram;
 use std::future::*;
+use std::io::Cursor;
 use std::io::{self, Bytes};
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::ops::Deref;
 use std::pin::*;
 use std::ptr::null;
+use std::io::Write;
 use std::ptr::*;
+// use byteorder::{BigEndian} ;//, ByteOrder, ReadBytesExt, WriteBytesExt};
+use byteorder::{BigEndian, ByteOrder, ReadBytesExt, WriteBytesExt};
+
 use std::rc::Rc;
 use std::str;
 use std::str::FromStr;
@@ -31,7 +39,11 @@ use snet::*;
 extern crate tokio;
 use async_recursion::async_recursion;
 use log::*;
-use tokio::io::{AsyncRead, AsyncReadExt};
+// use tokio::io::{AsyncRead, AsyncReadExt};
+
+use rand::{Rng, SeedableRng};
+use rand_pcg::Pcg32;
+// use  rand::rngs::StdRng;
 
 mod bindings;
 //pub use self::bindings::PanUDPAddr;
@@ -986,6 +998,7 @@ pub fn resolve_udp_addr(address: &str) -> Result<Endpoint, panError> {
 
 //} mod udp
 
+#[derive(Debug)]
 pub struct ListenSockAdapter {
     h: Pan_GoHandle,
 }
@@ -1032,6 +1045,8 @@ impl GoHandleOwner for ListenSockAdapter {
 #[derive(Debug)]
 pub struct ScionSocket {
     h: Pan_GoHandle,
+    adapter: Option<ListenSockAdapter>,
+    unix_sock: Option<UnixDatagram>,
 
     mtx_read: Arc<Mutex<ReadState>>,
     mtx_write: Arc<Mutex<WriteState>>,
@@ -1091,10 +1106,14 @@ impl Default for ScionSocket {
         let mtx_w = Arc::new(Mutex::new(wstate));
 
         let mut handle = unsafe { Pan_GoHandle::new1(PanNewScionSocket2() as u64) };
-        unsafe { assert!(handle.isValid() );}
+        unsafe {
+            assert!(handle.isValid());
+        }
 
         Self {
             h: handle,
+            adapter: None,
+            unix_sock: None,
 
             mtx_read: mtx_r,
             mtx_write: mtx_w,
@@ -1104,56 +1123,156 @@ impl Default for ScionSocket {
     }
 }
 
+
+/* generates the IPC proxy header and writes it into the buffers fst 30 bytes */
+pub fn make_proxy_header( buff: &mut[u8], remote: snet::SocketAddrScion ) 
+{
+    if buff.len() < 30 {
+        panic!("not enough buffer space to write proxy header");
+    }
+
+    let mut w = io::Cursor::new(buff);
+    w.write_u64::<BigEndian>(remote.ia());
+
+    let addr_len: u32 = match (*remote.host()) {
+        snet::IpAddr::V4(_) => 4,
+        snet::IpAddr::V6(_)=>16
+    };
+    w.write_u32::<LittleEndian>( addr_len);
+
+    match (*remote.host()) {
+        snet::IpAddr::V4(ip) => {
+            w.write_all(&ip.octets());
+        },
+        snet::IpAddr::V6(ip)=>{
+            for &segment in &ip.segments() {
+                w.write_u16::<BigEndian>(segment);
+            }
+        }
+    }
+    w.write_u16::<LittleEndian>(remote.port());
+
+}
+
+/* parses the IPC proxy header from the buffers fst 30 bytes */
+pub fn parse_proxy_header(buff: &[u8]) -> io::Result<snet::SocketAddrScion> {
+
+    if buff.len() < 30 {
+        panic!("not enough buffer space to parse proxy header");
+    }
+
+    let mut rdr = Cursor::new(buff);
+    let ia: u64 = rdr.read_u64::<BigEndian>()?;
+
+    let addr_len: u32 = rdr.read_u32::<LittleEndian>()?;
+    let mut host: IpAddr = Ipv4Addr::new(0, 0, 0, 0).into();
+
+    match addr_len {
+        4 => {
+            let b0 = rdr.read_u8()?;
+            let b1 = rdr.read_u8()?;
+            let b2 = rdr.read_u8()?;
+            let b3 = rdr.read_u8()?;
+            host = Ipv4Addr::new(b0, b1, b2, b3).into();
+        }
+        16 => {          
+            let mut seg = [0_u16; 8];
+
+            for x in seg.iter_mut() {
+                *x = rdr.read_u16::<BigEndian>()?;
+            }
+
+            host = Ipv6Addr::new(
+                seg[0], seg[1], seg[2], seg[3], seg[4], seg[5], seg[6], seg[7],
+            )
+            .into();
+        }
+        _ => {
+            unreachable!();
+        }
+    };
+    let p: u16 = rdr.read_u16::<LittleEndian>()?;
+    Ok(SocketAddrScion{addr: ScionAddr{ia: ia, host: host.into()},port: p})
+}
+
+// Reader/Writer interface using a Unix Domain Socket
+// to call any of these methods 'create_sock_adapter()' has to have been called
+// to initialize and connect the unix domain socket
 impl ScionSocket {
-    pub fn new(listen: snet::SocketAddr) -> Self {
-        let rstate = ReadState::Initial; // Assuming ReadState has an Initial variant
-        let wstate = WriteState::Initial; // Assuming WriteState has an Initial variant
-
-        let mtx_r = Arc::new(Mutex::new(rstate));
-        let mtx_w = Arc::new(Mutex::new(wstate));
-
-        let mut handle = unsafe {
-            let add = listen.to_string();
-            let h = PanNewScionSocket(add.as_ptr() as *const i8, add.len() as i32) as u64;
-            Pan_GoHandle::new1(h)
-        };
-
-        let s =Self {
-            h: handle,
-
-            mtx_read: mtx_r,
-            mtx_write: mtx_w,
-            async_read_timeout: 100,  //ms
-            async_write_timeout: 100, //ms
-        };
-
-      unsafe{  assert!(s.is_valid()); }
-        s
+    
+    pub async fn write_some_to(&mut self, send_buff: &[u8],
+         to: PanUDPAddr) -> io::Result<usize> {
+        if self.unix_sock.is_none() {
+            panic!("write_some_to requires initialized unix domain socket");
+        }
+        self.unix_sock.as_ref().unwrap().send(send_buff).await
     }
 
-    pub fn get_local_addr(&self) -> snet::SocketAddr {
-        unsafe {
-            if !self.is_valid() {
-                panic!("method called on invalid handle");
-            }
-
-            let ptr = PanScionSocketGetLocalAddr(self.get_handle());
-            let c_str = CStr::from_ptr(ptr);
-            <snet::SocketAddr as FromStr>::from_str(&c_str.to_string_lossy()).unwrap()
+ /* // for this to be  possible, the path GoHandle had to be included as a field in the proxy header 
+     pub async fn write_some_to_via(
+        &mut self,
+        send_buff: &Vec<u8>,
+        to: PanUDPAddr,
+        via: PanPath,
+    ) -> Result<i32, panError> {
+        if self.unix_sock.is_none() {
+            panic!("write_some_to_via requires initialized unix domain socket");
         }
     }
+*/
 
-    pub fn bind(&mut self, listen_addr: &str) -> Result<(), panError> {
-        unsafe {
-            let res = PanScionSocketBind(self.get_handle(), listen_addr.as_ptr() as *const i8);
-
-            match res {
-                PAN_ERR_OK => Ok(()),
-                _ => Err(panError(res)),
-            }
-        }
+    pub async fn write_to(
+        &mut self,
+        send_buff: &[u8],
+        to: PanUDPAddr,
+    ) -> Result<(), Box<dyn Error>> {
     }
 
+    pub async fn write_to_via(
+        &mut self,
+        send_buff: &[u8],
+        to: PanUDPAddr,
+        via: PanPath,
+    ) -> Result<(), Box<dyn Error>> {
+    }
+
+    pub fn write_to2<'a>(
+        &mut self,
+        send_buff: &'a [u8],
+        to: &Endpoint,
+    ) -> std::pin::Pin<Box<dyn futures::Future<Output = ()> + std::marker::Send + Sync + 'a>> {
+    }
+
+    pub fn write_to_via2<'a>(
+        &mut self,
+        send_buff: &'a [u8],
+        to: PanUDPAddr,
+        via: PanPath,
+    ) -> std::pin::Pin<Box<dyn futures::Future<Output = ()> + std::marker::Send + 'a>> {
+    }
+
+    pub fn read2(&mut self, recv_buf: &mut [u8]) -> ReadFuture {}
+
+    // actually read_some
+    pub async fn read(&mut self, recv_buff: &mut Vec<u8>) -> Result<i32, panError> {}
+
+    // actually async_read_some_from
+    pub async fn read_from(
+        &mut self,
+        recv_buff: &mut Vec<u8>,
+    ) -> Result<(i32, PanUDPAddr), panError> {
+    }
+
+    // actually async_read_some_from_via
+    pub async fn read_from_via(
+        &mut self,
+        recv_buff: &mut Vec<u8>,
+    ) -> Result<(i32, PanUDPAddr, PanPath), panError> {
+    }
+}
+
+// Reader/Writer interface implemented with completion callbacks
+impl ScionSocket {
     pub async fn async_write_some_to(
         this: Arc<Mutex<ScionSocket>>,
         send_buff: &[u8],
@@ -1237,6 +1356,106 @@ impl ScionSocket {
         recv_buff: &mut Vec<u8>,
     ) -> Result<(i32, PanUDPAddr, PanPath), panError> {
         unsafe { async_read_impl::<ScionSocket>(this, recv_buff).await }
+    }
+}
+
+impl ScionSocket {
+    pub fn create_sock_adapter(&mut self) -> Result<(), Box<dyn Error>> {
+        let mut rng = Pcg32::seed_from_u64(42);
+        // let mut rng = rand::thread_rng();
+
+        let randnr: u32 = rng.gen();
+
+        let go_sock_path: String = format!("/tmp/scion/pan/go{}", randnr);
+        let rust_sock_path: String = format!("/tmp/scion/pan/rust{}", randnr);
+
+        return self.create_sock_adapter_impl(&go_sock_path, &rust_sock_path);
+    }
+
+    fn create_sock_adapter_impl(
+        &mut self,
+        go_socket_path: &str,
+        rust_socket_path: &str,
+    ) -> Result<(), Box<dyn Error>> {
+        unsafe {
+            if !self.is_valid() {
+                panic!(" attempt to invoke method on invalid ScionSocket ");
+            }
+            let mut handle: Pan_GoHandle = Default::default();
+            let err: PanError = PanNewListenSockAdapter(
+                self.get_handle(),
+                go_socket_path.as_ptr() as *const i8,
+                rust_socket_path.as_ptr() as *const i8,
+                handle.resetAndGetAddressOf() as *mut usize,
+            );
+            if err == 0 {
+                self.adapter = Some(ListenSockAdapter::new(handle));
+                let mut sock = UnixDatagram::bind(rust_socket_path)?;
+
+                match sock.connect(rust_socket_path) {
+                    Ok(sock) => {}
+                    Err(e) => {
+                        panic!("Couldn't connect: {e:?}");
+                    }
+                };
+                self.unix_sock = Some(sock);
+                Ok(())
+            } else {
+                Err(Box::new(panError(err)))
+            }
+        }
+    }
+
+    pub fn new(listen: snet::SocketAddr) -> Self {
+        let rstate = ReadState::Initial; // Assuming ReadState has an Initial variant
+        let wstate = WriteState::Initial; // Assuming WriteState has an Initial variant
+
+        let mtx_r = Arc::new(Mutex::new(rstate));
+        let mtx_w = Arc::new(Mutex::new(wstate));
+
+        let mut handle = unsafe {
+            let add = listen.to_string();
+            let h = PanNewScionSocket(add.as_ptr() as *const i8, add.len() as i32) as u64;
+            Pan_GoHandle::new1(h)
+        };
+
+        let s = Self {
+            h: handle,
+            adapter: None,
+            unix_sock: None,
+            mtx_read: mtx_r,
+            mtx_write: mtx_w,
+            async_read_timeout: 100,  //ms
+            async_write_timeout: 100, //ms
+        };
+
+        unsafe {
+            assert!(s.is_valid());
+        }
+        s
+    }
+
+    pub fn get_local_addr(&self) -> snet::SocketAddr {
+        unsafe {
+            if !self.is_valid() {
+                panic!("method called on invalid handle");
+            }
+
+            let ptr = PanScionSocketGetLocalAddr(self.get_handle());
+            let c_str = CStr::from_ptr(ptr);
+            <snet::SocketAddr as FromStr>::from_str(&c_str.to_string_lossy()).unwrap()
+        }
+    }
+
+    pub fn bind(&mut self, listen_addr: &str) -> Result<(), panError> {
+        unsafe {
+            let res = PanScionSocketBind(self.get_handle(), listen_addr.as_ptr() as *const i8);
+
+            match res {
+                PAN_ERR_OK => Ok(()),
+                _ => Err(panError(res)),
+            }
+        }
     }
 
     /*

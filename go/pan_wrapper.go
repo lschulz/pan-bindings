@@ -2332,7 +2332,7 @@ func PanNewListenSockAdapter(
 	adapter *C.PanListenSockAdapter) C.PanError {
 
 	ls, err := NewListenSockAdapter(
-		cgo.Handle(pan_conn).Value().(pan.ListenConn),
+		cgo.Handle(pan_conn).Value().(SocketLike),
 		C.GoString(listen_addr),
 		C.GoString(client_addr))
 	if err != nil {
@@ -2356,14 +2356,14 @@ func PanListenSockAdapterClose(adapter C.PanListenSockAdapter) C.PanError {
 }
 
 type ListenSockAdapter struct {
-	pan_conn    pan.ListenConn
+	pan_conn    SocketLike
 	unix_conn   *net.UnixConn
 	unix_remote *net.UnixAddr
 	listen_addr string
 }
 
 func NewListenSockAdapter(
-	pan_conn pan.ListenConn, listen_addr string, client_addr string) (*ListenSockAdapter, error) {
+	pan_conn SocketLike, listen_addr string, client_addr string) (*ListenSockAdapter, error) {
 
 	listen, err := net.ResolveUnixAddr("unixgram", listen_addr)
 	if err != nil {
@@ -2649,13 +2649,13 @@ func PanListenSSockAdapterClose(adapter C.PanListenSSockAdapter) C.PanError {
 }
 
 type ListenSSockAdapter struct {
-	pan_conn      pan.ListenConn
+	pan_conn      SocketLike
 	unix_listener *net.UnixListener
 	unix_conn     *net.UnixConn
 }
 
 func NewListenSSockAdapter(
-	pan_conn pan.ListenConn, listen_addr string) (*ListenSSockAdapter, error) {
+	pan_conn SocketLike, listen_addr string) (*ListenSSockAdapter, error) {
 
 	listen, err := net.ResolveUnixAddr("unix", listen_addr)
 	if err != nil {
