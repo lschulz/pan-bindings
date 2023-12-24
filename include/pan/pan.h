@@ -236,7 +236,7 @@ extern PanSelector PanNewCSelector(struct PanSelectorCallbacks* callbacks, uintp
 \ingroup reply_selector
 */
 extern PanReplySelector PanNewCReplySelector(struct PanReplySelCallbacks* callbacks, uintptr_t user);
-extern PanScionSocket PanNewScionSocket(cchar_t* listen);
+extern PanScionSocket PanNewScionSocket(cchar_t* listen, int n);
 extern PanScionSocket PanNewScionSocket2();
 extern PanError PanScionSocketBind(PanScionSocket socket, cchar_t* listen);
 extern char* PanScionSocketGetLocalAddr(PanScionSocket socket);

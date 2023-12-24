@@ -681,8 +681,8 @@ pub trait ReplySelector: GoHandleOwner + Send + fmt::Debug {
         res
     }
 
-   // unsafe extern "C" fn cb_initialize(local: PanUDPAddr, user: usize)
-   unsafe extern "C" fn cb_initialize(local: u64, user: usize)
+    // unsafe extern "C" fn cb_initialize(local: PanUDPAddr, user: usize)
+    unsafe extern "C" fn cb_initialize(local: u64, user: usize)
     where
         Self: Sized,
     {
@@ -1090,8 +1090,9 @@ impl Default for ScionSocket {
         let mtx_r = Arc::new(Mutex::new(rstate));
         let mtx_w = Arc::new(Mutex::new(wstate));
 
-        let mut handle= unsafe { Pan_GoHandle::new1(  PanNewScionSocket2() as u64) };
-      
+        let mut handle = unsafe { Pan_GoHandle::new1(PanNewScionSocket2() as u64) };
+        unsafe { assert!(handle.isValid() );}
+
         Self {
             h: handle,
 
@@ -1104,24 +1105,53 @@ impl Default for ScionSocket {
 }
 
 impl ScionSocket {
-    pub fn get_local_addr(&self) -> snet::SocketAddr{
-        unsafe{
-     let ptr =      PanScionSocketGetLocalAddr(self.get_handle() ) ;
-     let c_str = CStr::from_ptr(ptr);
-           <snet::SocketAddr as FromStr>::from_str(  &c_str.to_string_lossy() ).unwrap()
+    pub fn new(listen: snet::SocketAddr) -> Self {
+        let rstate = ReadState::Initial; // Assuming ReadState has an Initial variant
+        let wstate = WriteState::Initial; // Assuming WriteState has an Initial variant
+
+        let mtx_r = Arc::new(Mutex::new(rstate));
+        let mtx_w = Arc::new(Mutex::new(wstate));
+
+        let mut handle = unsafe {
+            let add = listen.to_string();
+            let h = PanNewScionSocket(add.as_ptr() as *const i8, add.len() as i32) as u64;
+            Pan_GoHandle::new1(h)
+        };
+
+        let s =Self {
+            h: handle,
+
+            mtx_read: mtx_r,
+            mtx_write: mtx_w,
+            async_read_timeout: 100,  //ms
+            async_write_timeout: 100, //ms
+        };
+
+      unsafe{  assert!(s.is_valid()); }
+        s
+    }
+
+    pub fn get_local_addr(&self) -> snet::SocketAddr {
+        unsafe {
+            if !self.is_valid() {
+                panic!("method called on invalid handle");
+            }
+
+            let ptr = PanScionSocketGetLocalAddr(self.get_handle());
+            let c_str = CStr::from_ptr(ptr);
+            <snet::SocketAddr as FromStr>::from_str(&c_str.to_string_lossy()).unwrap()
         }
     }
 
     pub fn bind(&mut self, listen_addr: &str) -> Result<(), panError> {
-      unsafe {
-        
-         let   res = PanScionSocketBind(self.get_handle(), listen_addr.as_ptr() as *const i8);
-        
-        match res {
-            PAN_ERR_OK => Ok(()),
-            _ => Err(panError(res)),
+        unsafe {
+            let res = PanScionSocketBind(self.get_handle(), listen_addr.as_ptr() as *const i8);
+
+            match res {
+                PAN_ERR_OK => Ok(()),
+                _ => Err(panError(res)),
+            }
         }
-    }
     }
 
     pub async fn async_write_some_to(

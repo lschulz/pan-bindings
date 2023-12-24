@@ -678,14 +678,24 @@ func PanNewScionSocket2(socket *C.PanScionSocket) C.PanError {
 */
 
 //export PanNewScionSocket
-func PanNewScionSocket(listen *C.cchar_t) C.PanScionSocket {
-	local, err := netip.ParseAddrPort(C.GoString(listen))
+func PanNewScionSocket(listen *C.cchar_t, n C.int) C.PanScionSocket {
+
+	addr := string(C.GoBytes(unsafe.Pointer(listen), n))
+	local, err := netip.ParseAddrPort(addr)
 	if err != nil {
-		return C.PAN_ERR_ADDR_SYNTAX
+		l, e := pan.ParseUDPAddr(addr)
+		if e != nil {
+			panic(fmt.Sprintf("PanNewScionSocket error: %v", err))
+		} else {
+			local = netip.AddrPortFrom(l.IP, l.Port)
+		}
 	}
 	sock, err := pan.NewScionSocket(context.Background(), local)
 	if err != nil {
 		panic(fmt.Sprintf("%v", err))
+	}
+	if sock == nil {
+		fmt.Println("PanNewScionSocket: socket was nil!")
 	}
 
 	p := C.PanScionSocket(cgo.NewHandle(sock))
@@ -710,7 +720,6 @@ func PanNewScionSocket(listen *C.cchar_t) C.PanScionSocket {
 
 //export PanNewScionSocket2
 func PanNewScionSocket2() C.PanScionSocket {
-
 	sock, err := pan.NewScionSocket2()
 	if err != nil {
 		panic(fmt.Sprintf("%v", err))
@@ -1261,13 +1270,10 @@ func PanListenConnWriteTo(
 
 func PanSocketLikeWriteToViaAsyncImpl(
 	ch cgo.Handle, buffer *C.cvoid_t, len C.int, to C.PanUDPAddr, path C.PanPath, n *C.int, timeout C.int, waker C.OnCompletionWaker, arc_conn *C.void) C.PanError {
-
 	c := ch.Value().(SocketLike)
 	p := C.GoBytes(unsafe.Pointer(buffer), len)
 	addr := cgo.Handle(to).Value().(pan.UDPAddr)
 	via := cgo.Handle(path).Value().(*pan.Path)
-
-	fmt.Println("PanSocketLikeWriteToViaAsyncImpl")
 
 	// Set write deadline to zero for non-blocking write
 	/*if err := c.SetWriteDeadline(time.Now()); err != nil {
@@ -1293,11 +1299,9 @@ func PanSocketLikeWriteToViaAsyncImpl(
 				var chann00 chan tuple00
 				{
 					mu00.Lock()
-					fmt.Println("trying to get lock 0")
 					conn := C.PanScionSocket(ch)
 					chann00 = chann00s[uintptr(conn)]
 					mu00.Unlock()
-					fmt.Println("unlocked 0")
 				}
 
 				chann00 <- tuple00{p, addr, via, n, waker, c, arc_conn}
@@ -1338,11 +1342,9 @@ func PanSocketLikeWriteToViaAsyncImpl(
 
 func PanSocketLikeWriteToAsyncImpl(
 	ch cgo.Handle, buffer *C.cvoid_t, len C.int, to C.PanUDPAddr, n *C.int, timeout C.int, waker C.OnCompletionWaker, arc_conn *C.void) C.PanError {
-
 	c := ch.Value().(SocketLike)
 	p := C.GoBytes(unsafe.Pointer(buffer), len)
 	addr := cgo.Handle(to).Value().(pan.UDPAddr)
-	fmt.Println("PanSocketLikeWriteToAsyncImpl")
 
 	// Set write deadline to zero for non-blocking write
 	/*if err := c.SetWriteDeadline(time.Now()); err != nil {
@@ -1367,13 +1369,10 @@ func PanSocketLikeWriteToAsyncImpl(
 
 				var chann00 chan tuple00
 				{
-					fmt.Println("trying to get Lock1")
 					mu00.Lock()
 					conn := C.PanScionSocket(ch)
 					chann00 = chann00s[uintptr(conn)]
 					mu00.Unlock()
-					fmt.Println("unlocked1")
-
 				}
 				chann00 <- tuple00{p, addr, nil, n, waker, c, arc_conn}
 
