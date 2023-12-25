@@ -2,10 +2,13 @@
 #![allow(non_camel_case_types)]
 #![allow(non_snake_case)]
 #![feature(ptr_metadata)]
+#![feature(iter_advance_by)]
+#![feature(slice_pattern)]
 
 include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
 
 use byteorder::LittleEndian;
+use core::slice::SlicePattern;
 use futures::future::{Future, TryFutureExt};
 use std::any::Any;
 
@@ -18,12 +21,12 @@ use std::fmt;
 use async_std::os::unix::net::UnixDatagram;
 use std::future::*;
 use std::io::Cursor;
+use std::io::Write;
 use std::io::{self, Bytes};
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::ops::Deref;
 use std::pin::*;
 use std::ptr::null;
-use std::io::Write;
 use std::ptr::*;
 // use byteorder::{BigEndian} ;//, ByteOrder, ReadBytesExt, WriteBytesExt};
 use byteorder::{BigEndian, ByteOrder, ReadBytesExt, WriteBytesExt};
@@ -41,7 +44,9 @@ use async_recursion::async_recursion;
 use log::*;
 // use tokio::io::{AsyncRead, AsyncReadExt};
 
+use rand;
 use rand::{Rng, SeedableRng};
+//use rand::thread_rng;
 use rand_pcg::Pcg32;
 // use  rand::rngs::StdRng;
 
@@ -1055,6 +1060,9 @@ pub struct ScionSocket {
     async_write_timeout: std::os::raw::c_int, // milliseconds
 }
 
+unsafe impl Send for ScionSocket {}
+unsafe impl Sync for ScionSocket {}
+
 impl GoHandleOwner for ScionSocket {
     unsafe fn as_bool(&self) -> bool {
         self.h.isValid()
@@ -1123,10 +1131,38 @@ impl Default for ScionSocket {
     }
 }
 
+pub fn make_proxy_header2(remote: &snet::SocketAddrScion) -> Vec<u8> {
+    let mut buff: Vec<u8> = Vec::with_capacity(32);
+    buff.resize(32, 0);
+
+    let mut w = io::Cursor::new(&mut buff);
+    w.write_u64::<BigEndian>(remote.ia());// 0-8 IA
+
+    let addr_len: u32 = match (*remote.host()) {
+        snet::IpAddr::V4(_) => 4,
+        snet::IpAddr::V6(_) => 16,
+    };
+    w.write_u32::<LittleEndian>(addr_len); // 8-12 addr_len
+
+    match (*remote.host()) {
+        snet::IpAddr::V4(ip) => {
+            w.write_all(&ip.octets());
+        }
+        snet::IpAddr::V6(ip) => {
+            for &segment in &ip.segments() {
+                w.write_u16::<BigEndian>(segment);
+            }
+        }
+    }
+   
+   w.set_position(28);
+   w.write_u16::<LittleEndian>(remote.port()); // 28-30 port
+
+    return buff;
+}
 
 /* generates the IPC proxy header and writes it into the buffers fst 30 bytes */
-pub fn make_proxy_header( buff: &mut[u8], remote: snet::SocketAddrScion ) 
-{
+pub fn make_proxy_header(buff: &mut [u8], remote: &snet::SocketAddrScion) {
     if buff.len() < 30 {
         panic!("not enough buffer space to write proxy header");
     }
@@ -1136,27 +1172,25 @@ pub fn make_proxy_header( buff: &mut[u8], remote: snet::SocketAddrScion )
 
     let addr_len: u32 = match (*remote.host()) {
         snet::IpAddr::V4(_) => 4,
-        snet::IpAddr::V6(_)=>16
+        snet::IpAddr::V6(_) => 16,
     };
-    w.write_u32::<LittleEndian>( addr_len);
+    w.write_u32::<LittleEndian>(addr_len);
 
     match (*remote.host()) {
         snet::IpAddr::V4(ip) => {
             w.write_all(&ip.octets());
-        },
-        snet::IpAddr::V6(ip)=>{
+        }
+        snet::IpAddr::V6(ip) => {
             for &segment in &ip.segments() {
                 w.write_u16::<BigEndian>(segment);
             }
         }
     }
     w.write_u16::<LittleEndian>(remote.port());
-
 }
 
 /* parses the IPC proxy header from the buffers fst 30 bytes */
 pub fn parse_proxy_header(buff: &[u8]) -> io::Result<snet::SocketAddrScion> {
-
     if buff.len() < 30 {
         panic!("not enough buffer space to parse proxy header");
     }
@@ -1175,7 +1209,7 @@ pub fn parse_proxy_header(buff: &[u8]) -> io::Result<snet::SocketAddrScion> {
             let b3 = rdr.read_u8()?;
             host = Ipv4Addr::new(b0, b1, b2, b3).into();
         }
-        16 => {          
+        16 => {
             let mut seg = [0_u16; 8];
 
             for x in seg.iter_mut() {
@@ -1191,84 +1225,162 @@ pub fn parse_proxy_header(buff: &[u8]) -> io::Result<snet::SocketAddrScion> {
             unreachable!();
         }
     };
+    rdr.set_position(28);
     let p: u16 = rdr.read_u16::<LittleEndian>()?;
-    Ok(SocketAddrScion{addr: ScionAddr{ia: ia, host: host.into()},port: p})
+    Ok(SocketAddrScion {
+        addr: ScionAddr {
+            ia: ia,
+            host: host.into(),
+        },
+        port: p,
+    })
+}
+
+fn copy_slice(dst: &mut [u8], src: &[u8]) -> usize {
+    dst.iter_mut().zip(src).map(|(x, y)| *x = *y).count()
 }
 
 // Reader/Writer interface using a Unix Domain Socket
 // to call any of these methods 'create_sock_adapter()' has to have been called
 // to initialize and connect the unix domain socket
 impl ScionSocket {
-    
-    pub async fn write_some_to(&mut self, send_buff: &[u8],
-         to: PanUDPAddr) -> io::Result<usize> {
+    // send buff contains application payload without proxy header
+    pub async fn write_some_to(
+        &self,
+        send_buff: &[u8],
+        to: &snet::SocketAddrScion,
+    ) -> io::Result<usize> {
         if self.unix_sock.is_none() {
             panic!("write_some_to requires initialized unix domain socket");
         }
-        self.unix_sock.as_ref().unwrap().send(send_buff).await
+
+        //   make_proxy_header(send_buff, to);
+        let hdr = make_proxy_header2(to);
+        let iter2 = send_buff.iter().cloned();
+        let buff = hdr.iter().cloned().chain(iter2).collect::<Vec<_>>();
+
+        self.unix_sock.as_ref().unwrap().send(buff.as_slice()).await
     }
 
- /* // for this to be  possible, the path GoHandle had to be included as a field in the proxy header 
-     pub async fn write_some_to_via(
-        &mut self,
-        send_buff: &Vec<u8>,
-        to: PanUDPAddr,
-        via: PanPath,
-    ) -> Result<i32, panError> {
-        if self.unix_sock.is_none() {
-            panic!("write_some_to_via requires initialized unix domain socket");
+    /* // for this to be  possible, the path GoHandle had to be included as a field in the proxy header
+         pub async fn write_some_to_via(
+            &mut self,
+            send_buff: &Vec<u8>,
+            to: PanUDPAddr,
+            via: PanPath,
+        ) -> Result<i32, panError> {
+            if self.unix_sock.is_none() {
+                panic!("write_some_to_via requires initialized unix domain socket");
+            }
         }
-    }
-*/
+    */
 
     pub async fn write_to(
-        &mut self,
+        &self,
         send_buff: &[u8],
-        to: PanUDPAddr,
+        to: &snet::SocketAddrScion,
     ) -> Result<(), Box<dyn Error>> {
+        if self.unix_sock.is_none() {
+            panic!("write_to requires initialized unix domain socket");
+        }
+        let bytes_to_snd: usize = send_buff.len();
+        let mut bytes_written: usize = 0;
+        while bytes_to_snd > bytes_written {
+            //make_proxy_header(&mut send_buff[bytes_written..bytes_to_snd], to);
+            let hdr = make_proxy_header2(to);
+            let iter2 = send_buff.iter().cloned();
+            let buff = hdr.iter().cloned().chain(iter2).collect::<Vec<_>>();
+
+            debug!("send buff len: {}", buff.len());
+            bytes_written += self
+                .unix_sock
+                .as_ref()
+                .unwrap()
+                .send(buff.as_slice())
+                .await?;
+            debug!("byte written: {}", bytes_written);
+        }
+
+        return Ok(());
     }
 
+    /*
+    // for this to be  possible, the path GoHandle had to be included as a field in the proxy header
     pub async fn write_to_via(
         &mut self,
         send_buff: &[u8],
         to: PanUDPAddr,
         via: PanPath,
-    ) -> Result<(), Box<dyn Error>> {
+    ) -> Result<(), Box<dyn Error>>
+    {
+    }
+    */
+
+    // removes the proxy header from the received data and returns the number of bytes of payload after the header
+    pub async fn read_some(&self, recv_buf: &mut [u8]) -> io::Result<usize> {
+        if self.unix_sock.is_none() {
+            panic!("read_some requires initialized unix domain socket");
+        }
+        let mut buff: Vec<u8> = Vec::<u8>::with_capacity(recv_buf.len());
+        buff.resize(recv_buf.len(), 0);
+        let bytes = self
+            .unix_sock
+            .as_ref()
+            .unwrap()
+            .recv(buff.as_mut_slice())
+            .await?;
+        let real_len = std::cmp::max(bytes as i32 - 32, 0);
+        copy_slice(recv_buf, &buff.as_slice()[32..32+real_len as usize] );
+        debug!("read_some received: {}bytes", real_len);
+
+        return Ok(real_len as usize);
     }
 
-    pub fn write_to2<'a>(
-        &mut self,
-        send_buff: &'a [u8],
-        to: &Endpoint,
-    ) -> std::pin::Pin<Box<dyn futures::Future<Output = ()> + std::marker::Send + Sync + 'a>> {
+    // actually read_some_from
+    // removes the proxy header from the received data and returns the number of bytes of payload after the header
+    pub async fn read_some_from(
+        &self,
+        recv_buf: &mut [u8],
+    ) -> io::Result<(usize, snet::SocketAddrScion)> {
+        if self.unix_sock.is_none() {
+            panic!("read_some_from requires initialized unix domain socket");
+        }
+        let mut buff: Vec<u8> = Vec::<u8>::with_capacity(recv_buf.len());
+        buff.resize(recv_buf.len(), 0);
+        let bytes = self
+            .unix_sock
+            .as_ref()
+            .unwrap()
+            .recv(buff.as_mut_slice())
+            .await?;
+
+        let real_len = std::cmp::max(bytes as i32 - 32, 0);
+        let mut from = SocketAddrScion {
+            addr: ScionAddr {
+                ia: 0,
+                host: Ipv4Addr::new(0, 0, 0, 0).into(),
+            },
+            port: 0,
+        };
+        if real_len > 0 {
+            from = parse_proxy_header(buff.as_slice())?;
+            copy_slice(recv_buf, &buff.as_slice()[32..32+real_len as usize] );
+
+        }
+
+        debug!("read_some_from received: {}bytes from {}", real_len, from.to_string());
+        return Ok((real_len as usize, from));
     }
 
-    pub fn write_to_via2<'a>(
-        &mut self,
-        send_buff: &'a [u8],
-        to: PanUDPAddr,
-        via: PanPath,
-    ) -> std::pin::Pin<Box<dyn futures::Future<Output = ()> + std::marker::Send + 'a>> {
-    }
-
-    pub fn read2(&mut self, recv_buf: &mut [u8]) -> ReadFuture {}
-
-    // actually read_some
-    pub async fn read(&mut self, recv_buff: &mut Vec<u8>) -> Result<i32, panError> {}
-
-    // actually async_read_some_from
-    pub async fn read_from(
-        &mut self,
-        recv_buff: &mut Vec<u8>,
-    ) -> Result<(i32, PanUDPAddr), panError> {
-    }
-
-    // actually async_read_some_from_via
+    /*
+    // actually read_some_from_via
+     // for this to be  possible, the path GoHandle had to be included as a field in the proxy header
     pub async fn read_from_via(
-        &mut self,
-        recv_buff: &mut Vec<u8>,
+        & self,
+        recv_buff: &mut [u8],
     ) -> Result<(i32, PanUDPAddr, PanPath), panError> {
     }
+    */
 }
 
 // Reader/Writer interface implemented with completion callbacks
@@ -1360,19 +1472,22 @@ impl ScionSocket {
 }
 
 impl ScionSocket {
-    pub fn create_sock_adapter(&mut self) -> Result<(), Box<dyn Error>> {
-        let mut rng = Pcg32::seed_from_u64(42);
-        // let mut rng = rand::thread_rng();
+    pub async fn create_sock_adapter(&mut self) -> Result<(), Box<dyn Error>> {
+        //let mut rng = Pcg32::seed_from_u64(42);
+        let mut rng = rand::thread_rng();
 
         let randnr: u32 = rng.gen();
 
-        let go_sock_path: String = format!("/tmp/scion/pan/go{}", randnr);
-        let rust_sock_path: String = format!("/tmp/scion/pan/rust{}", randnr);
+        let go_sock_path: String = format!("/tmp/go{}", randnr);
+        let rust_sock_path: String = format!("/tmp/rust{}", randnr);
 
-        return self.create_sock_adapter_impl(&go_sock_path, &rust_sock_path);
+        return self
+            .create_sock_adapter_impl(&go_sock_path, 
+                &rust_sock_path)
+            .await;
     }
 
-    fn create_sock_adapter_impl(
+    async fn create_sock_adapter_impl(
         &mut self,
         go_socket_path: &str,
         rust_socket_path: &str,
@@ -1389,18 +1504,36 @@ impl ScionSocket {
                 handle.resetAndGetAddressOf() as *mut usize,
             );
             if err == 0 {
-                self.adapter = Some(ListenSockAdapter::new(handle));
-                let mut sock = UnixDatagram::bind(rust_socket_path)?;
+                debug!("sock_adapter created successfully");
 
-                match sock.connect(rust_socket_path) {
-                    Ok(sock) => {}
-                    Err(e) => {
-                        panic!("Couldn't connect: {e:?}");
+                let mut rsock = UnixDatagram::bind(rust_socket_path).await;
+
+                match rsock {
+                    Ok(sock) => {
+                        match sock.connect(go_socket_path).await {
+                            Ok(_) => {
+                                debug!("unix socket connected successfully");
+                            }
+                            Err(e) => {
+                                panic!("Couldn't connect: {:?}", e);
+                            }
+                        };
+                        self.unix_sock = Some(sock);
                     }
-                };
-                self.unix_sock = Some(sock);
+                    Err(e) => {
+                        debug!(
+                            "failed to bind unix socket to {} error: {}",
+                            rust_socket_path, e
+                        );
+                        return Err(Box::new(e));
+                    }
+                }
+
+                self.adapter = Some(ListenSockAdapter::new(handle));
+
                 Ok(())
             } else {
+                debug!("create_sock_adapter error: {}", err);
                 Err(Box::new(panError(err)))
             }
         }
@@ -1452,8 +1585,14 @@ impl ScionSocket {
             let res = PanScionSocketBind(self.get_handle(), listen_addr.as_ptr() as *const i8);
 
             match res {
-                PAN_ERR_OK => Ok(()),
-                _ => Err(panError(res)),
+                PAN_ERR_OK => {
+                    debug!("pan scion socket bound successfully");
+                    Ok(())
+                }
+                _ => {
+                    debug!("pan_socket_bind erro: {}", res);
+                    Err(panError(res))
+                }
             }
         }
     }
@@ -2137,7 +2276,8 @@ where
         bytes_written += unsafe {
             async_write_some_impl::<C>(
                 this.clone(),
-                &send_buff[bytes_written as usize..(bytes_to_send - bytes_written) as usize],
+                //&send_buff[bytes_written as usize..(bytes_to_send - bytes_written) as usize],
+                &send_buff[bytes_written as usize..bytes_to_send as usize],
                 to,
                 via,
             )

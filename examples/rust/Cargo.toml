@@ -16,6 +16,10 @@ name = "async_socket_echo"
 path = "src/async_socket_echo.rs"
 
 
+[[bin]]
+name = "async_socket_echo_unix"
+path = "src/async_socket_echo_unix.rs"
+
 [build-dependencies]
 pan_bindings  = { path= "../../rust" }
 #bindgen = "0.65.1"
@@ -37,3 +41,6 @@ simplelog = "^0.12.0"
 env_logger= "0.10.1"
 #simple_logger = {version = "4.3.0", default-features = false, features = ["timestamps"] }
 log = "0.4.20"
+#futures-io = { version = "0.3.19", optional = true }
+futures = "0.3.29"
+snet ={version="0.0.1", path ="../../../rust-scion-std-net" }

@@ -714,7 +714,7 @@ func PanNewScionSocket(listen *C.cchar_t, n C.int) C.PanScionSocket {
 		go fcn01(cch)
 		mu01.Unlock()
 	}
-
+	fmt.Println("pannewscionsocket returned successfully")
 	return p
 }
 
@@ -767,7 +767,7 @@ func PanScionSocketGetLocalAddr(socket C.PanScionSocket) *C.char {
 }
 
 func PanSocketLikeReadFromAsyncImpl(ch cgo.Handle, buffer *C.void, len C.int, from *C.PanUDPAddr, n *C.int, timeout_duration C.int, waker C.OnCompletionWaker, arc_conn *C.void) C.PanError {
-
+	fmt.Println("PanSocketLikeReadFromAsyncImpl")
 	c := ch.Value().(SocketLike)
 
 	p := unsafe.Slice((*byte)(unsafe.Pointer(buffer)), len)
@@ -2336,6 +2336,7 @@ func PanNewListenSockAdapter(
 		C.GoString(listen_addr),
 		C.GoString(client_addr))
 	if err != nil {
+		fmt.Println("PanNewListenSockAdapter failed")
 		return C.PAN_ERR_FAILED
 	}
 
@@ -2367,16 +2368,19 @@ func NewListenSockAdapter(
 
 	listen, err := net.ResolveUnixAddr("unixgram", listen_addr)
 	if err != nil {
+		fmt.Printf("NewListenSockAdapter failed to resolv listen: %v\n", err)
 		return nil, err
 	}
 	remote, err := net.ResolveUnixAddr("unixgram", client_addr)
 	if err != nil {
+		fmt.Printf("NewListenSockAdapter failed to resolv client: %v\n", err)
 		return nil, err
 	}
 
 	os.Remove(listen_addr)
 	unix_conn, err := net.ListenUnixgram("unixgram", listen)
 	if err != nil {
+		fmt.Printf("NewListenSockAdapter failed to listen: %v\n", err)
 		return nil, err
 	}
 
@@ -2386,7 +2390,7 @@ func NewListenSockAdapter(
 		unix_remote: remote,
 		listen_addr: listen_addr,
 	}
-
+	fmt.Printf("%v -> %v\n", listen_addr, client_addr)
 	go adapter.panToUnix()
 	go adapter.unixToPan()
 
@@ -2405,14 +2409,17 @@ func (ls *ListenSockAdapter) panToUnix() {
 	for {
 		// Read from network
 		read, from, err := ls.pan_conn.ReadFrom(buffer[ADDR_HDR_SIZE:])
+		fmt.Printf("read %v bytes from pan \n", read)
 		if err != nil {
+			fmt.Printf("failed to read from pan: %v\n", err)
 			return
 		}
 
 		// Prepend from header to received bytes
 		pan_from, ok := from.(pan.UDPAddr)
 		if !ok {
-			continue
+			// 	continue
+			panic("logic error")
 		}
 		binary.BigEndian.PutUint64(buffer, (uint64)(pan_from.IA))
 		if pan_from.IP.Is4() {
@@ -2429,9 +2436,12 @@ func (ls *ListenSockAdapter) panToUnix() {
 		binary.LittleEndian.PutUint16(buffer[28:30], pan_from.Port)
 		message := buffer[:ADDR_HDR_SIZE+read]
 
+		var n int = 0
 		// Pass to unix socket
-		_, err = ls.unix_conn.WriteToUnix(message, ls.unix_remote)
+		n, err = ls.unix_conn.WriteToUnix(message, ls.unix_remote)
+		fmt.Printf("wrote %v bytes to unix ", n)
 		if err != nil {
+			fmt.Printf("failed to write to unix: %v", err)
 			return
 		}
 	}
@@ -2442,10 +2452,13 @@ func (ls *ListenSockAdapter) unixToPan() {
 	for {
 		// Read from unix socket
 		read, _, err := ls.unix_conn.ReadFromUnix(buffer)
+		fmt.Printf("read %v byte from unix\n", read)
 		if err != nil {
+			fmt.Printf("failed to read from unix: %v\n", err)
 			return
 		}
 		if read < ADDR_HDR_SIZE {
+			fmt.Println("WARNING: received less than proxy header from unix")
 			continue
 		}
 
@@ -2458,13 +2471,17 @@ func (ls *ListenSockAdapter) unixToPan() {
 		} else if addr_len == 16 {
 			to.IP = netip.AddrFrom16(*(*[16]byte)(buffer[12:28]))
 		} else {
+			fmt.Println("WARNING: invalid proxy header read from unix")
 			continue
 		}
 		to.Port = binary.LittleEndian.Uint16(buffer[28:30])
 
 		// Pass to network socket
-		_, err = ls.pan_conn.WriteTo(buffer[ADDR_HDR_SIZE:read], to)
+		var n int
+		n, err = ls.pan_conn.WriteTo(buffer[ADDR_HDR_SIZE:read], to)
+		fmt.Printf("wrote %v byte to pan ->%v\n", n, to.String())
 		if err != nil {
+			fmt.Printf("failed to write to pan: %v\n", err)
 			return
 		}
 	}
