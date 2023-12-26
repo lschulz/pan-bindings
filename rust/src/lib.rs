@@ -1279,7 +1279,7 @@ impl ScionSocket {
         &self,
         send_buff: &[u8],
         to: &snet::SocketAddrScion,
-    ) -> Result<(), Box<dyn Error>> {
+    ) -> io::Result<()> {
         if self.unix_sock.is_none() {
             panic!("write_to requires initialized unix domain socket");
         }
@@ -1515,7 +1515,7 @@ impl ScionSocket {
                                 debug!("unix socket connected successfully");
                             }
                             Err(e) => {
-                                panic!("Couldn't connect: {:?}", e);
+                                panic!("Couldn't connect {} -> {}: {:?}", go_socket_path, rust_socket_path ,e);
                             }
                         };
                         self.unix_sock = Some(sock);
