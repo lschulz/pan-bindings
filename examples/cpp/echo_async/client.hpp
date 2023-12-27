@@ -19,7 +19,7 @@
 #include "common/message_parser.hpp"
 #include "pan/pan.hpp"
 
-#include <asio.hpp>
+#include <boost/asio.hpp>
 
 #include <cstdint>
 #include <filesystem>
@@ -39,6 +39,8 @@ public:
         namespace fs = std::filesystem;
         using namespace std::placeholders;
         using asio::local::datagram_protocol;
+
+        count = args.count;
 
         auto tmp = fs::temp_directory_path();
         fs::path goSocketPath = tmp / "scion_async_client_go.sock";
@@ -69,7 +71,7 @@ public:
     }
 
 private:
-    void connected(const asio::error_code& error)
+    void connected(const system::error_code& error)
     {
         using namespace std::placeholders;
 
@@ -81,21 +83,23 @@ private:
         socket.async_send(asio::buffer(buffer), std::bind(&Client::sent, this, _1, _2));
     }
 
-    void sent(const asio::error_code& error, size_t bytes)
+    void sent(const system::error_code& error, size_t bytes)
     {
+
         using namespace std::placeholders;
 
         if (error) {
             std::cerr << "ASIO error: " << error.message() << std::endl;
             return;
         }
+        ++msg_send;
 
         buffer.clear();
         buffer.resize(4096);
         socket.async_receive(asio::buffer(buffer), std::bind(&Client::received, this, _1, _2));
     }
 
-    void received(const asio::error_code& error, size_t bytes)
+    void received(const system::error_code& error, size_t bytes)
     {
         if (error) {
             std::cerr << "ASIO error: " << error.message() << std::endl;
@@ -105,6 +109,11 @@ private:
         std::cout << "Received " << bytes << " bytes:\n";
         buffer.resize(bytes);
         printBuffer(std::cout, buffer) << '\n';
+
+        if (msg_send < count)
+        {
+            connected( boost::system::error_code( ) );
+        }
     }
 
 private:
@@ -113,6 +122,8 @@ private:
 
     asio::io_context ioContext;
     asio::local::datagram_protocol::socket socket;
+    int count;  // number of times to repeat the message
+    int msg_send = 0; // number of messages send so far
 
     std::vector<char> buffer;
 };

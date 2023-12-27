@@ -103,6 +103,9 @@ bool PathFingerprint::operator!=(const PathFingerprint& other) const noexcept
 //////////
 
 DLLEXPORT
+PathFingerprint::PathFingerprint() {}
+
+DLLEXPORT
 std::string Path::toString() const
 {
     return CString(PanPathToString(h.get())).get();

@@ -61,6 +61,7 @@ bool isKeyPressed(HANDLE hConsoleInput, WORD vKey)
 
 #endif
 
+using namespace boost;
 struct Arguments
 {
     std::string localAddr;

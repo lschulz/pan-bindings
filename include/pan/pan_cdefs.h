@@ -28,6 +28,9 @@
 #define PAN_ERR_NO_PATH 3
 #define PAN_ERR_ADDR_SYNTAX 4
 #define PAN_ERR_ADDR_RESOLUTION 5
+#define PAN_ERR_WOULDBLOCK 6
+#define PAN_ERR_HOSTNOTFOUND 7
+
 
 typedef const void cvoid_t;
 typedef const char cchar_t;
@@ -37,6 +40,7 @@ typedef uint32_t PanError;
 typedef uintptr_t PanUDPAddr;
 typedef uintptr_t PanConn;
 typedef uintptr_t PanListenConn;
+typedef uintptr_t PanScionSocket;
 typedef uintptr_t PanPath;
 typedef uintptr_t PanPathFingerprint;
 typedef uintptr_t PanPathInterface;
@@ -47,6 +51,19 @@ typedef uintptr_t PanConnSockAdapter;
 typedef uintptr_t PanConnSSockAdapter;
 typedef uintptr_t PanListenSockAdapter;
 typedef uintptr_t PanListenSSockAdapter;
+
+/////////////////
+// Async Read/Write
+////////////////
+
+
+
+typedef void (*OnCompletionWaker)( void* , PanError );
+
+inline void InvokeCompletionWaker( OnCompletionWaker waker , void* conn, PanError completion_code)
+{
+	waker(conn, completion_code);
+}
 
 ////////////
 // Policy //
@@ -126,7 +143,8 @@ inline void panCallSelectorClose(PanSelectorClose f, uintptr_t user)
 typedef PanPath (*PanReplySelPathFn)(PanUDPAddr remote, uintptr_t user);
 
 /// Handles must be deleted by callee.
-typedef void (*PanReplySelInitializeFn)(PanUDPAddr local, uintptr_t user);
+//typedef void (*PanReplySelInitializeFn)(PanUDPAddr local, uintptr_t user);
+typedef void (*PanReplySelInitializeFn)(uint64_t local, uintptr_t user);
 
 /// Handles must be deleted by callee.
 typedef void (*PanReplySelRecordFn)(PanUDPAddr remote, PanPath path, uintptr_t user);
@@ -150,7 +168,8 @@ inline uintptr_t panCallReplySelPath(PanReplySelPathFn f, PanUDPAddr remote, uin
 	return f(remote, user);
 }
 
-inline void panCallReplySelInitialize(PanReplySelInitializeFn f, PanUDPAddr local, uintptr_t user)
+//inline void panCallReplySelInitialize(PanReplySelInitializeFn f, PanUDPAddr local, uintptr_t user)
+inline void panCallReplySelInitialize(PanReplySelInitializeFn f, uint64_t local, uintptr_t user)
 {
 	f(local, user);
 }

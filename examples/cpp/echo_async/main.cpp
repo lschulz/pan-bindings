@@ -23,10 +23,12 @@
 #include "client_win32.hpp"
 #endif
 
-#include <asio.hpp>
+
+#include <boost/asio.hpp>
 #include <iostream>
 #include <cstddef>
 
+using namespace boost;
 
 int main(int argc, char* argv[])
 {

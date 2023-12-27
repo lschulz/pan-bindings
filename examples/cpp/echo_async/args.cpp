@@ -28,7 +28,7 @@ bool parseArgs(int argc, char* argv[], Arguments& args)
         { "local", required_argument, NULL, 'l' },
         { "remote", required_argument, NULL, 'r' },
         { "msg", required_argument, NULL, 'm' },
-        {}
+        {"count", required_argument, NULL, 'c'},
     };
 
     int opt = -1;
@@ -52,13 +52,19 @@ bool parseArgs(int argc, char* argv[], Arguments& args)
             }
             break;
         }
+        case 'c':
+        {
+            args.count = std::stoi(optarg);
+            break;
+        }
         case 'h':
         default:
             std::cout
                 << "Usage: echo-async -local LOCAL -remote REMOTE -msg MESSAGE\n"
                 << "  LOCAL   Local IP address and port (required for servers)\n"
                 << "  REMOTE  Scion address of the remote server (only for clients)\n"
-                << "  MESSAGE The message clients will send to the server\n";
+                << "  MESSAGE The message clients will send to the server\n"
+                << "  COUNT   (for clients) number of times clients will repeat the message\n";
             return false;
         }
     }
