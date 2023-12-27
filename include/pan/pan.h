@@ -519,7 +519,7 @@ PanDeleteHandle().
 extern PanError PanConnClose(PanConn conn);
 
 /**
-\brief Open a Unix datagram socket at `listen_addr` as proxy for `pan_conn`.
+\brief Open a Unix datagram socket at `listen_addr` as proxy for `pan_conn` or scion_socket (any SocketLike type).
 
 All packets received by `pan_conn` are forwarded from `listen_addr` to `client_addr`.
 All packets received from the Unix socket are forwarded to `pan_conn`.
@@ -540,14 +540,17 @@ BE = big-endian
 LE = little-endian
 \endverbatim
 
-\param[in] pan_conn Listening PAN connection.
+\param[in] pan_conn Listening PAN connection or ScionSocket (any type that implements SocketLike).
 \param[in] listen_addr Local address of the socket in the file system.
+			On the 'FFI caller' side a unix domain socket must have been constructed an bound to this address
+			before the adapter is constructed.
 \param[in] client_addr Address of the other end of the connection in the C part
 	of the program.
 \param[out] adapter Socket adapter object.
 \ingroup adapter
 */
 extern PanError PanNewListenSockAdapter(PanListenConn pan_conn, cchar_t* listen_addr, cchar_t* client_addr, PanListenSockAdapter* adapter);
+extern PanError PanNewListenSockAdapter2(PanListenConn pan_conn, cchar_t* listen_addr, int len1, cchar_t* client_addr, int len2, PanListenSockAdapter* adapter);
 
 /**
 \brief Close the Unix domain socket **and the PAN connection**.
@@ -577,7 +580,7 @@ extern PanError PanNewConnSockAdapter(PanConn pan_conn, cchar_t* listen_addr, cc
 extern PanError PanConnSockAdapterClose(PanConnSockAdapter adapter);
 
 /**
-\brief Open a Unix stream socket at `listen_addr` as proxy for `pan_conn`.
+\brief Open a Unix stream socket at `listen_addr` as proxy for `pan_conn` or 'scion_socket'(any SocketLike).
 
 Behaves identical to `PanNewListenSockAdapter` except that a stream socket is
 used instead of a datagram socket. Packet borders in the stream are determined

@@ -100,6 +100,9 @@ func PanDeleteHandle(handle C.uintptr_t) {
 /**
 \brief Wrapper for `pan.ResolveUDPAddr`
 	A handle to the resolved address is returned in `resolved`.
+\attention deprecated in favour of PanResolveUDPAddrN
+		Reason:	conversion of C to Go string with func C.GoString(p *_Ctype_char) string
+		has been repeatedly found to be unreliable and cause bugs.
 \ingroup addresses
 */
 //export PanResolveUDPAddr
@@ -2298,8 +2301,9 @@ func PanConnClose(conn C.PanConn) C.PanError {
 ///////////////////////
 
 /**
-\brief Open a Unix datagram socket at `listen_addr` as proxy for `pan_conn`.
-
+\brief Open a Unix datagram socket at `listen_addr` as proxy for `pan_conn` or scion_socket (any SocketLike type).
+\attention deprecated in favour of PanNewListenSockAdapter2
+		Reason:	conversion of C to Go string with func C.GoString(p *_Ctype_char) string has been repeatedly found to be unreliable and cause bugs.
 All packets received by `pan_conn` are forwarded from `listen_addr` to `client_addr`.
 All packets received from the Unix socket are forwarded to `pan_conn`.
 The SCION address of the source or destination is prepended to the payload in a
@@ -2319,8 +2323,10 @@ BE = big-endian
 LE = little-endian
 \endverbatim
 
-\param[in] pan_conn Listening PAN connection.
+\param[in] pan_conn Listening PAN connection or ScionSocket (any type that implements SocketLike).
 \param[in] listen_addr Local address of the socket in the file system.
+			On the 'FFI caller' side a unix domain socket must have been constructed an bound to this address
+			before the adapter is constructed.
 \param[in] client_addr Address of the other end of the connection in the C part
 	of the program.
 \param[out] adapter Socket adapter object.
@@ -2335,6 +2341,28 @@ func PanNewListenSockAdapter(
 		cgo.Handle(pan_conn).Value().(SocketLike),
 		C.GoString(listen_addr),
 		C.GoString(client_addr))
+	if err != nil {
+		fmt.Println("PanNewListenSockAdapter failed")
+		return C.PAN_ERR_FAILED
+	}
+
+	ptr := (*C.PanListenSockAdapter)(unsafe.Pointer(adapter))
+	*ptr = C.PanListenSockAdapter(cgo.NewHandle(ls))
+	return C.PAN_ERR_OK
+}
+
+//export PanNewListenSockAdapter2
+func PanNewListenSockAdapter2(
+	pan_conn C.PanListenConn, listen_addr *C.cchar_t, len1 C.int, client_addr *C.cchar_t, len2 C.int,
+	adapter *C.PanListenSockAdapter) C.PanError {
+
+	var listen = C.GoBytes(unsafe.Pointer(listen_addr), len1)
+	var client = C.GoBytes(unsafe.Pointer(client_addr), len2)
+
+	ls, err := NewListenSockAdapter(
+		cgo.Handle(pan_conn).Value().(SocketLike),
+		string(listen),
+		string(client))
 	if err != nil {
 		fmt.Println("PanNewListenSockAdapter failed")
 		return C.PAN_ERR_FAILED
@@ -2617,7 +2645,7 @@ func (cs *ConnSockAdapter) unixToPan() {
 ////////////////////////
 
 /**
-\brief Open a Unix stream socket at `listen_addr` as proxy for `pan_conn`.
+\brief Open a Unix stream socket at `listen_addr` as proxy for `pan_conn` or 'scion_socket'(any SocketLike).
 
 Behaves identical to `PanNewListenSockAdapter` except that a stream socket is
 used instead of a datagram socket. Packet borders in the stream are determined

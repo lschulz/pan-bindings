@@ -1496,18 +1496,20 @@ impl ScionSocket {
             if !self.is_valid() {
                 panic!(" attempt to invoke method on invalid ScionSocket ");
             }
+            // this has to go before creation of adapter
+            let mut rsock = UnixDatagram::bind(rust_socket_path).await; 
             let mut handle: Pan_GoHandle = Default::default();
-            let err: PanError = PanNewListenSockAdapter(
+            let err: PanError = PanNewListenSockAdapter2(
                 self.get_handle(),
                 go_socket_path.as_ptr() as *const i8,
+                go_socket_path.len() as i32,
                 rust_socket_path.as_ptr() as *const i8,
+                rust_socket_path.len() as i32,
                 handle.resetAndGetAddressOf() as *mut usize,
             );
             if err == 0 {
                 debug!("sock_adapter created successfully");
-
-                let mut rsock = UnixDatagram::bind(rust_socket_path).await;
-
+                
                 match rsock {
                     Ok(sock) => {
                         match sock.connect(go_socket_path).await {
