@@ -119,6 +119,9 @@ extern void PanDeleteHandle(uintptr_t handle);
 /**
 \brief Wrapper for `pan.ResolveUDPAddr`
 	A handle to the resolved address is returned in `resolved`.
+\attention deprecated in favour of PanResolveUDPAddrN
+		Reason:	conversion of C to Go string with func C.GoString(p *_Ctype_char) string
+		has been repeatedly found to be unreliable and cause bugs.
 \ingroup addresses
 */
 extern PanError PanResolveUDPAddr(cchar_t* address, PanUDPAddr* resolved);
@@ -520,7 +523,8 @@ extern PanError PanConnClose(PanConn conn);
 
 /**
 \brief Open a Unix datagram socket at `listen_addr` as proxy for `pan_conn` or scion_socket (any SocketLike type).
-
+\attention deprecated in favour of PanNewListenSockAdapter2
+		Reason:	conversion of C to Go string with func C.GoString(p *_Ctype_char) string has been repeatedly found to be unreliable and cause bugs.
 All packets received by `pan_conn` are forwarded from `listen_addr` to `client_addr`.
 All packets received from the Unix socket are forwarded to `pan_conn`.
 The SCION address of the source or destination is prepended to the payload in a

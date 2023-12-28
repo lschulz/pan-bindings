@@ -12,8 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 #include <functional>
+#ifdef BINDGEN
+#include "go_handle.hpp"
+#include "pan.h"
+#else
 #include "pan/go_handle.hpp"
 #include "pan/pan.h"
+#endif
 
 namespace Pan
 {   

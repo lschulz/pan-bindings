@@ -23,7 +23,7 @@ pan pan_cpp
 add_custom_command(
     OUTPUT ${RUST_BINDINGS}
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-    COMMAND cargo build
+    COMMAND cargo build # --release -vv
     DEPENDS ${SOURCES}
 )
 

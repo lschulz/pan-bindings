@@ -23,3 +23,7 @@ endif()
 if(BUILD_RUST)
     add_subdirectory(rust)
 endif()
+
+if(BUILD_RUST AND BUILD_EXAMPLES)
+    add_subdirectory(examples/rust)
+endif()
