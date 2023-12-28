@@ -37,8 +37,8 @@ use std::str::FromStr;
 use std::sync::{Arc, Mutex, Once};
 use std::task::{Context, Poll, Waker};
 use std::time::Duration;
-extern crate snet;
-use snet::*;
+extern crate scionnet;
+use scionnet::*;
 extern crate tokio;
 use async_recursion::async_recursion;
 use log::*;
@@ -852,10 +852,10 @@ impl Default for Endpoint {
     }
 }
 
-impl Into<snet::SocketAddr> for Endpoint {
+impl Into<scionnet::SocketAddr> for Endpoint {
     /* 19-ffaa:1:1094,127.0.0.1:37227 -> 37904-100a:aff1:300,127.0.0.1:37227
-    fn into(self) -> snet::SocketAddr {
-        snet::SocketAddr::SCION(
+    fn into(self) -> scionnet::SocketAddr {
+        scionnet::SocketAddr::SCION(
              SocketAddrScion::new1(
                 ScionAddr::new1(self.get_isd(),
                  self.get_asn(),
@@ -864,27 +864,27 @@ impl Into<snet::SocketAddr> for Endpoint {
     }
     */
 
-    fn into(self) -> snet::SocketAddr {
+    fn into(self) -> scionnet::SocketAddr {
         unsafe {
             if !self.is_valid() {
                 panic!("cannot convert invalid panEndpoint to SocketAddr ");
             }
 
-            snet::SocketAddr::SCION(
-                <snet::SocketAddrScion as FromStr>::from_str(&self.to_string()).unwrap(),
+            scionnet::SocketAddr::SCION(
+                <scionnet::SocketAddrScion as FromStr>::from_str(&self.to_string()).unwrap(),
             )
         }
     }
 }
 
-impl From<snet::SocketAddrScion> for Endpoint {
-    fn from(addr: snet::SocketAddrScion) -> Endpoint {
+impl From<scionnet::SocketAddrScion> for Endpoint {
+    fn from(addr: scionnet::SocketAddrScion) -> Endpoint {
         <Self as FromStr>::from_str(&addr.to_string()).unwrap()
     }
 }
 
-impl From<snet::SocketAddr> for Endpoint {
-    fn from(addr: snet::SocketAddr) -> Endpoint {
+impl From<scionnet::SocketAddr> for Endpoint {
+    fn from(addr: scionnet::SocketAddr) -> Endpoint {
         <Self as FromStr>::from_str(&addr.to_string()).unwrap()
     }
 }
@@ -1131,7 +1131,7 @@ impl Default for ScionSocket {
     }
 }
 
-pub fn make_proxy_header2(remote: &snet::SocketAddrScion) -> Vec<u8> {
+pub fn make_proxy_header2(remote: &scionnet::SocketAddrScion) -> Vec<u8> {
     let mut buff: Vec<u8> = Vec::with_capacity(32);
     buff.resize(32, 0);
 
@@ -1139,16 +1139,16 @@ pub fn make_proxy_header2(remote: &snet::SocketAddrScion) -> Vec<u8> {
     w.write_u64::<BigEndian>(remote.ia());// 0-8 IA
 
     let addr_len: u32 = match (*remote.host()) {
-        snet::IpAddr::V4(_) => 4,
-        snet::IpAddr::V6(_) => 16,
+        scionnet::IpAddr::V4(_) => 4,
+        scionnet::IpAddr::V6(_) => 16,
     };
     w.write_u32::<LittleEndian>(addr_len); // 8-12 addr_len
 
     match (*remote.host()) {
-        snet::IpAddr::V4(ip) => {
+        scionnet::IpAddr::V4(ip) => {
             w.write_all(&ip.octets());
         }
-        snet::IpAddr::V6(ip) => {
+        scionnet::IpAddr::V6(ip) => {
             for &segment in &ip.segments() {
                 w.write_u16::<BigEndian>(segment);
             }
@@ -1162,7 +1162,7 @@ pub fn make_proxy_header2(remote: &snet::SocketAddrScion) -> Vec<u8> {
 }
 
 /* generates the IPC proxy header and writes it into the buffers fst 30 bytes */
-pub fn make_proxy_header(buff: &mut [u8], remote: &snet::SocketAddrScion) {
+pub fn make_proxy_header(buff: &mut [u8], remote: &scionnet::SocketAddrScion) {
     if buff.len() < 30 {
         panic!("not enough buffer space to write proxy header");
     }
@@ -1171,16 +1171,16 @@ pub fn make_proxy_header(buff: &mut [u8], remote: &snet::SocketAddrScion) {
     w.write_u64::<BigEndian>(remote.ia());
 
     let addr_len: u32 = match (*remote.host()) {
-        snet::IpAddr::V4(_) => 4,
-        snet::IpAddr::V6(_) => 16,
+        scionnet::IpAddr::V4(_) => 4,
+        scionnet::IpAddr::V6(_) => 16,
     };
     w.write_u32::<LittleEndian>(addr_len);
 
     match (*remote.host()) {
-        snet::IpAddr::V4(ip) => {
+        scionnet::IpAddr::V4(ip) => {
             w.write_all(&ip.octets());
         }
-        snet::IpAddr::V6(ip) => {
+        scionnet::IpAddr::V6(ip) => {
             for &segment in &ip.segments() {
                 w.write_u16::<BigEndian>(segment);
             }
@@ -1190,7 +1190,7 @@ pub fn make_proxy_header(buff: &mut [u8], remote: &snet::SocketAddrScion) {
 }
 
 /* parses the IPC proxy header from the buffers fst 30 bytes */
-pub fn parse_proxy_header(buff: &[u8]) -> io::Result<snet::SocketAddrScion> {
+pub fn parse_proxy_header(buff: &[u8]) -> io::Result<scionnet::SocketAddrScion> {
     if buff.len() < 30 {
         panic!("not enough buffer space to parse proxy header");
     }
@@ -1248,7 +1248,7 @@ impl ScionSocket {
     pub async fn write_some_to(
         &self,
         send_buff: &[u8],
-        to: &snet::SocketAddrScion,
+        to: &scionnet::SocketAddrScion,
     ) -> io::Result<usize> {
         if self.unix_sock.is_none() {
             panic!("write_some_to requires initialized unix domain socket");
@@ -1278,7 +1278,7 @@ impl ScionSocket {
     pub async fn write_to(
         &self,
         send_buff: &[u8],
-        to: &snet::SocketAddrScion,
+        to: &scionnet::SocketAddrScion,
     ) -> io::Result<()> {
         if self.unix_sock.is_none() {
             panic!("write_to requires initialized unix domain socket");
@@ -1341,7 +1341,7 @@ impl ScionSocket {
     pub async fn read_some_from(
         &self,
         recv_buf: &mut [u8],
-    ) -> io::Result<(usize, snet::SocketAddrScion)> {
+    ) -> io::Result<(usize, scionnet::SocketAddrScion)> {
         if self.unix_sock.is_none() {
             panic!("read_some_from requires initialized unix domain socket");
         }
@@ -1541,7 +1541,7 @@ impl ScionSocket {
         }
     }
 
-    pub fn new(listen: snet::SocketAddr) -> Self {
+    pub fn new(listen: scionnet::SocketAddr) -> Self {
         let rstate = ReadState::Initial; // Assuming ReadState has an Initial variant
         let wstate = WriteState::Initial; // Assuming WriteState has an Initial variant
 
@@ -1570,7 +1570,7 @@ impl ScionSocket {
         s
     }
 
-    pub fn get_local_addr(&self) -> snet::SocketAddr {
+    pub fn get_local_addr(&self) -> scionnet::SocketAddr {
         unsafe {
             if !self.is_valid() {
                 panic!("method called on invalid handle");
@@ -1578,7 +1578,7 @@ impl ScionSocket {
 
             let ptr = PanScionSocketGetLocalAddr(self.get_handle());
             let c_str = CStr::from_ptr(ptr);
-            <snet::SocketAddr as FromStr>::from_str(&c_str.to_string_lossy()).unwrap()
+            <scionnet::SocketAddr as FromStr>::from_str(&c_str.to_string_lossy()).unwrap()
         }
     }
 

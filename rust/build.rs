@@ -10,7 +10,9 @@ fn main() {
     println!("enter BUILD-SCRIPT");
 
     match std::process::Command::new("mkdir").arg("tmp").output() {
-        Ok(_) => {}
+        Ok(o) => {
+            print!("mkdir output: {:?}\n", o);
+        }
         Err(e) => {
             panic!("mkdir failed: {}", e);
         }
@@ -19,7 +21,7 @@ fn main() {
     let out_dir = env::var("OUT_DIR").unwrap();
 
     // This is the directory where the `c` library is located.
-    let libdir_path = PathBuf::from("tmp")
+    let libdir_path = PathBuf::from("./tmp")
         // Canonicalize the path as `rustc-link-search` requires an absolute
         // path.
         .canonicalize()

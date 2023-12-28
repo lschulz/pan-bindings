@@ -12,7 +12,7 @@ use std::io::*;
 use std::result::Result;
 use time::macros;
 use std::sync::Arc;
-use snet::SocketAddrScion;
+use scionnet::SocketAddrScion;
 use std::str::FromStr;
 
 use std::sync::Mutex as  stdMutex;
