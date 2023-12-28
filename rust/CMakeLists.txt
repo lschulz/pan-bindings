@@ -17,10 +17,17 @@ pan pan_cpp
 ${RUST_BINDINGS}
 )
 
+set(CARGO_FLAGS "-vv")
+
+
+if( CARGO_BUILD)
+list(APPEND CARGO_FLAGS "--target-dir ../target" )
+endif()
+
 add_custom_command(
     OUTPUT ${RUST_BINDINGS}
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-    COMMAND cargo build -vv# --release -vv
+    COMMAND cargo build ${CARGO_FLAGS}# --release
     DEPENDS ${SOURCES}
 )
 

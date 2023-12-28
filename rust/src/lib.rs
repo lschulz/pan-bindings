@@ -5,7 +5,9 @@
 #![feature(iter_advance_by)]
 #![feature(slice_pattern)]
 
-include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
+//include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
+include!("./bindings.rs");
+
 
 use byteorder::LittleEndian;
 use core::slice::SlicePattern;

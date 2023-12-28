@@ -4,47 +4,24 @@ use std::env;
 use std::fs;
 use std::path::PathBuf;
 
+extern crate cmake;
+use cmake::Config;
+
 use bindgen::CargoCallbacks;
 
 fn main() {
-/*
-idea: let the build script figure out, from where it is invoked
+    println!("enter top level BUILD-SCRIPT");
 
- */
-
-    println!("enter BUILD-SCRIPT");
-    let dir = env::current_dir().unwrap();    
+    let dir = env::current_dir().unwrap();
+    std::env::set_var("OUTER_OUT_DIR", env::var("OUT_DIR").unwrap().to_string() );
+    std::env::set_var("PROJECT_DIR", dir.to_str().unwrap() );
     println!( "DIR: {:?}" ,dir );
 
-    let mut prj_dir = env::var("PROJECT_DIR").or( Ok( String::from(dir.to_str().unwrap()) ) );
+    let mut cmake_cfg = Config::new(".");
 
-    let path_to_lib: PathBuf = match env::var("PROJECT_DIR") {
-        Ok(p) =>{
-            PathBuf::from(p).join("/rust/src")
-        },
-        Err(e)=>{
-            dir.join("/src")
-        }
-    };
-
-
-
-    let mut out_dir = env::var("OUT_DIR").unwrap();
-    let out = env::var("OUTER_OUT_DIR");
-
-    match out
-    {
-        Ok(o)=>{
-            // CargoBuild
-            println!("cargo-build: {}", o);
-            // out_dir = o;
-        },
-        Err(e)=>{
-            // CMakeBuild
-            println!("cmake-build");
-        }
-    }
-
+    cmake_cfg.define("CARGO_BUILD","1");
+    let dst = cmake_cfg.build();
+/*
     match std::process::Command::new("mkdir").arg("tmp").output() {
         Ok(o) => {
             print!("mkdir output: {:?}\n", o);
@@ -54,7 +31,7 @@ idea: let the build script figure out, from where it is invoked
         }
     }
 
-   
+    let out_dir = env::var("OUT_DIR").unwrap();
 
     // This is the directory where the `c` library is located.
     let libdir_path = PathBuf::from("./tmp")
@@ -65,7 +42,7 @@ idea: let the build script figure out, from where it is invoked
 
     println!("libdir_path: {}", libdir_path.display());
     // This is the path to the `c` headers file.
-    let headers_path_str = "../include/pan/go_handle.hpp"; // headers_path.to_str().expect("Path is not a valid string");
+    let headers_path_str = "./include/pan/go_handle.hpp"; // headers_path.to_str().expect("Path is not a valid string");
 
     // This is the path to the intermediate object file for our library.
     let obj_path = libdir_path.join("go_handle.o");
@@ -76,12 +53,12 @@ idea: let the build script figure out, from where it is invoked
     let res = std::process::Command::new("clang++")
         .arg("-c")
         .arg("-I")
-        .arg("../include/pan")
-        //.arg("-I ../include/pan/pan.h")
-        //.arg("-I ../include/pan/go_handle.hpp")
+        .arg("./include/pan")
+        //.arg("-I ./include/pan/pan.h")
+        //.arg("-I ./include/pan/go_handle.hpp")
         .arg("-o")
         .arg(&obj_path)
-        .arg("../cpp/go_handle.cpp")
+        .arg("./cpp/go_handle.cpp")
         .arg("-DBINDGEN")
         .output();
     // if !res.expect("cannot execute clang").status.success()
@@ -121,7 +98,7 @@ idea: let the build script figure out, from where it is invoked
 
     println!("cargo:rustc-link-search=all=tmp");
     println!("cargo:rustc-link-search=all={}", &out_dir);
-    println!("cargo:rustc-link-search=all=../build/go");
+    println!("cargo:rustc-link-search=all=./build/go");
     println!("cargo:rustc-link-search=all=/lib/x86_64-linux-gnu");
 
     //  println!("cargo:rustc-link-search=../build/go");
@@ -136,7 +113,7 @@ idea: let the build script figure out, from where it is invoked
 
     // Tell cargo to invalidate the built crate whenever the header changes.
     println!("cargo:rerun-if-changed={}", headers_path_str);
-    println!("cargo:rerun-if-changed=../build");
+    println!("cargo:rerun-if-changed=./build");
 
     // The bindgen::Builder is the main entry point
     // to bindgen, and lets you build up options for
@@ -147,10 +124,10 @@ idea: let the build script figure out, from where it is invoked
         .clang_arg("-DBINDGEN")
         .clang_arg("-xc++")
         .clang_arg("-std=c++11")
-        .clang_arg("-I ../include")
-        .clang_arg("-I ../include/pan")
-        .header("../include/pan/pan_cdefs.h")
-        .header("../include/pan/pan.h")
+        .clang_arg("-I ./include")
+        .clang_arg("-I ./include/pan")
+        .header("./include/pan/pan_cdefs.h")
+        .header("./include/pan/pan.h")
         .header(headers_path_str)
         // Tell cargo to invalidate the built crate whenever any of the
         // included header files changed.
@@ -160,20 +137,10 @@ idea: let the build script figure out, from where it is invoked
         // Unwrap the Result and panic on failure.
         .expect("Unable to generate bindings");
 
-
-    
-
     // Write the bindings to the $OUT_DIR/bindings.rs file.
     let out_path = PathBuf::from(out_dir).join("bindings.rs");
-
-
-    env::set_var("BINDINGS_PATH", &*out_path.to_string_lossy() );
-
     bindings
         .write_to_file(out_path)
         .expect("Couldn't write bindings!");
-
-    // copy bindings to PROJECT_DIR/rust/src/bindings.rs where lib.rs expects them
-   std::fs::copy(out_path, path_to_lib.join("bindings.rs")  )
-   .expect("cannot copy generated bindings to where lib.rs expects them");
+    */
 }

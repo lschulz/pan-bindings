@@ -1,8 +1,13 @@
 [package]
-    name = "pan_bindings"
+    name = "pan"
     version = "1.0.0"
     edition = "2021"
+    #build = "rust/build.rs"
+    build = "build.rs"
 
+[lib]
+name = "pan"           # The name of the target.
+path = "rust/src/lib.rs"    # The source file of the target.
 
 [build-dependencies]
 bindgen = "0.65.1"
@@ -22,4 +27,3 @@ futures = "0.3.29"
 async-recursion2 = {version ="1.0.5"}
 scionnet ={version="0.0.2" }
 log = "0.4.20"
-
