@@ -16,7 +16,7 @@ idea: let the build script figure out, from where it is invoked
     let dir = env::current_dir().unwrap();    
     println!( "DIR: {:?}" ,dir );
 
-    let mut prj_dir = env::var("PROJECT_DIR").or( Ok( String::from(dir.to_str().unwrap()) ) );
+    // let mut prj_dir = env::var("PROJECT_DIR").or( Ok( String::from(dir.to_str().unwrap()) ) );
 
     let path_to_lib: PathBuf = match env::var("PROJECT_DIR") {
         Ok(p) =>{
@@ -170,7 +170,7 @@ idea: let the build script figure out, from where it is invoked
     env::set_var("BINDINGS_PATH", &*out_path.to_string_lossy() );
 
     bindings
-        .write_to_file(out_path)
+        .write_to_file(out_path.clone() )
         .expect("Couldn't write bindings!");
 
     // copy bindings to PROJECT_DIR/rust/src/bindings.rs where lib.rs expects them

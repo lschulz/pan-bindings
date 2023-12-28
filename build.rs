@@ -12,16 +12,18 @@ use bindgen::CargoCallbacks;
 fn main() {
     println!("enter top level BUILD-SCRIPT");
 
-    let dir = env::current_dir().unwrap();
+    let dir :PathBuf = env::current_dir().unwrap();
     std::env::set_var("OUTER_OUT_DIR", env::var("OUT_DIR").unwrap().to_string() );
     std::env::set_var("PROJECT_DIR", dir.to_str().unwrap() );
     println!( "DIR: {:?}" ,dir );
+
+
 
     let mut cmake_cfg = Config::new(".");
 
     cmake_cfg.define("CARGO_BUILD","1");
     let dst = cmake_cfg.build();
-/*
+
     match std::process::Command::new("mkdir").arg("tmp").output() {
         Ok(o) => {
             print!("mkdir output: {:?}\n", o);
@@ -140,7 +142,10 @@ fn main() {
     // Write the bindings to the $OUT_DIR/bindings.rs file.
     let out_path = PathBuf::from(out_dir).join("bindings.rs");
     bindings
-        .write_to_file(out_path)
+        .write_to_file(out_path.clone())
         .expect("Couldn't write bindings!");
-    */
+
+        std::fs::copy(out_path.clone(), PathBuf::from("./rust/src").join("bindings.rs")  )
+        .expect("cannot copy generated bindings to where lib.rs expects them");
+    
 }

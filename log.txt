@@ -1,0 +1,121 @@
+[pan 1.0.0] enter top level BUILD-SCRIPT
+[pan 1.0.0] DIR: "/home/vagrant/pan-bindings"
+[pan 1.0.0] CMAKE_TOOLCHAIN_FILE_x86_64-unknown-linux-gnu = None
+[pan 1.0.0] CMAKE_TOOLCHAIN_FILE_x86_64_unknown_linux_gnu = None
+[pan 1.0.0] HOST_CMAKE_TOOLCHAIN_FILE = None
+[pan 1.0.0] CMAKE_TOOLCHAIN_FILE = None
+[pan 1.0.0] CMAKE_GENERATOR_x86_64-unknown-linux-gnu = None
+[pan 1.0.0] CMAKE_GENERATOR_x86_64_unknown_linux_gnu = None
+[pan 1.0.0] HOST_CMAKE_GENERATOR = None
+[pan 1.0.0] CMAKE_GENERATOR = None
+[pan 1.0.0] CMAKE_PREFIX_PATH_x86_64-unknown-linux-gnu = None
+[pan 1.0.0] CMAKE_PREFIX_PATH_x86_64_unknown_linux_gnu = None
+[pan 1.0.0] HOST_CMAKE_PREFIX_PATH = None
+[pan 1.0.0] CMAKE_PREFIX_PATH = None
+[pan 1.0.0] CMAKE_x86_64-unknown-linux-gnu = None
+[pan 1.0.0] CMAKE_x86_64_unknown_linux_gnu = None
+[pan 1.0.0] HOST_CMAKE = None
+[pan 1.0.0] CMAKE = None
+[pan 1.0.0] running: cd "/home/vagrant/pan-bindings/target/debug/build/pan-fbc19794ae520d7a/out/build" && CMAKE_PREFIX_PATH="" "cmake" "/home/vagrant/pan-bindings/." "-DCARGO_BUILD=1" "-DCMAKE_INSTALL_PREFIX=/home/vagrant/pan-bindings/target/debug/build/pan-fbc19794ae520d7a/out" "-DCMAKE_C_FLAGS= -ffunction-sections -fdata-sections -fPIC -m64" "-DCMAKE_C_COMPILER=/usr/bin/cc" "-DCMAKE_CXX_FLAGS= -ffunction-sections -fdata-sections -fPIC -m64" "-DCMAKE_CXX_COMPILER=/usr/bin/c++" "-DCMAKE_ASM_FLAGS= -ffunction-sections -fdata-sections -fPIC -m64" "-DCMAKE_ASM_COMPILER=/usr/bin/cc" "-DCMAKE_BUILD_TYPE=Debug"
+[pan 1.0.0] -- The C compiler identification is GNU 11.4.0
+[pan 1.0.0] -- The CXX compiler identification is GNU 13.1.0
+[pan 1.0.0] -- Detecting C compiler ABI info
+[pan 1.0.0] -- Detecting C compiler ABI info - done
+[pan 1.0.0] -- Check for working C compiler: /usr/bin/cc - skipped
+[pan 1.0.0] -- Detecting C compile features
+[pan 1.0.0] -- Detecting C compile features - done
+[pan 1.0.0] -- Detecting CXX compiler ABI info
+[pan 1.0.0] -- Detecting CXX compiler ABI info - done
+[pan 1.0.0] -- Check for working CXX compiler: /usr/bin/c++ - skipped
+[pan 1.0.0] -- Detecting CXX compile features
+[pan 1.0.0] -- Detecting CXX compile features - done
+[pan 1.0.0] -- Found Curses: /usr/lib/x86_64-linux-gnu/libcurses.so  
+[pan 1.0.0] -- Configuring done (0.2s)
+[pan 1.0.0] -- Generating done (0.0s)
+[pan 1.0.0] -- Build files have been written to: /home/vagrant/pan-bindings/target/debug/build/pan-fbc19794ae520d7a/out/build
+[pan 1.0.0] running: cd "/home/vagrant/pan-bindings/target/debug/build/pan-fbc19794ae520d7a/out/build" && MAKEFLAGS="-j --jobserver-fds=7,8 --jobserver-auth=7,8" "cmake" "--build" "." "--target" "install" "--config" "Debug"
+[pan 1.0.0] [  5%] Generating libpand.a, libpand.h
+[pan 1.0.0] [ 11%] Generating /home/vagrant/pan-bindings/include/pan/pan.h
+[pan 1.0.0] [ 11%] Built target pan
+[pan 1.0.0] [ 23%] Building CXX object cpp/CMakeFiles/pan_cpp.dir/go_handle.cpp.o
+[pan 1.0.0] [ 23%] Building CXX object cpp/CMakeFiles/pan_cpp.dir/pan.cpp.o
+[pan 1.0.0] [ 29%] Linking CXX static library libpancppd.a
+[pan 1.0.0] [ 29%] Built target pan_cpp
+[pan 1.0.0] [ 52%] Building CXX object examples/cpp/CMakeFiles/echo-async.dir/common/message_parser.cpp.o
+[pan 1.0.0] [ 52%] Building CXX object examples/cpp/CMakeFiles/echo.dir/echo/reply_selector.cpp.o
+[pan 1.0.0] [ 52%] Building CXX object examples/cpp/CMakeFiles/echo-async.dir/echo_async/main.cpp.o
+[pan 1.0.0] [ 52%] Building CXX object examples/cpp/CMakeFiles/echo.dir/echo/main.cpp.o
+[pan 1.0.0] [ 64%] Building CXX object examples/cpp/CMakeFiles/echo.dir/echo/ncurses_helper.cpp.o
+[pan 1.0.0] [ 64%] Building CXX object examples/cpp/CMakeFiles/echo-async.dir/echo_async/proxy.cpp.o
+[pan 1.0.0] [ 76%] Building CXX object examples/cpp/CMakeFiles/echo-async.dir/echo_async/args.cpp.o
+[pan 1.0.0] [ 76%] Building CXX object examples/cpp/CMakeFiles/echo.dir/common/message_parser.cpp.o
+[pan 1.0.0] [ 82%] Building CXX object examples/cpp/CMakeFiles/echo.dir/echo/policy.cpp.o
+[pan 1.0.0] [ 88%] Building CXX object examples/cpp/CMakeFiles/echo.dir/echo/selector.cpp.o
+[pan 1.0.0] [ 94%] Linking CXX executable scion-echo
+[pan 1.0.0] [ 94%] Built target echo
+[pan 1.0.0] [100%] Linking CXX executable scion-echo-async
+[pan 1.0.0] [100%] Built target echo-async
+[pan 1.0.0] Install the project...
+[pan 1.0.0] -- Install configuration: "Debug"
+[pan 1.0.0] -- Installing: /home/vagrant/pan-bindings/target/debug/build/pan-fbc19794ae520d7a/out/include/pan/pan.h
+[pan 1.0.0] -- Installing: /home/vagrant/pan-bindings/target/debug/build/pan-fbc19794ae520d7a/out/include/pan/pan_cdefs.h
+[pan 1.0.0] -- Installing: /home/vagrant/pan-bindings/target/debug/build/pan-fbc19794ae520d7a/out/lib/libpand.a
+[pan 1.0.0] -- Installing: /home/vagrant/pan-bindings/target/debug/build/pan-fbc19794ae520d7a/out/lib/libpancppd.a
+[pan 1.0.0] -- Installing: /home/vagrant/pan-bindings/target/debug/build/pan-fbc19794ae520d7a/out/include/pan/pan.hpp
+[pan 1.0.0] -- Installing: /home/vagrant/pan-bindings/target/debug/build/pan-fbc19794ae520d7a/out/include/pan/go_handle.hpp
+[pan 1.0.0] -- Installing: /home/vagrant/pan-bindings/target/debug/build/pan-fbc19794ae520d7a/out/bin/scion-echo
+[pan 1.0.0] -- Installing: /home/vagrant/pan-bindings/target/debug/build/pan-fbc19794ae520d7a/out/bin/scion-echo-async
+[pan 1.0.0] cargo:root=/home/vagrant/pan-bindings/target/debug/build/pan-fbc19794ae520d7a/out
+[pan 1.0.0] mkdir output: Output { status: ExitStatus(unix_wait_status(0)), stdout: "", stderr: "" }
+[pan 1.0.0] libdir_path: /home/vagrant/pan-bindings/tmp
+[pan 1.0.0] output: Output { status: ExitStatus(unix_wait_status(0)), stdout: "", stderr: "" }
+[pan 1.0.0] cargo:rustc-link-search=all=tmp
+[pan 1.0.0] cargo:rustc-link-search=all=/home/vagrant/pan-bindings/target/debug/build/pan-fbc19794ae520d7a/out
+[pan 1.0.0] cargo:rustc-link-search=all=./build/go
+[pan 1.0.0] cargo:rustc-link-search=all=/lib/x86_64-linux-gnu
+[pan 1.0.0] cargo:rustc-link-lib=static:+bundle=go_handle
+[pan 1.0.0] cargo:rustc-link-lib=static:+bundle=pan
+[pan 1.0.0] cargo:rustc-link-lib=stdc++
+[pan 1.0.0] cargo:rerun-if-changed=./include/pan/go_handle.hpp
+[pan 1.0.0] cargo:rerun-if-changed=./build
+[pan 1.0.0] cargo:rerun-if-env-changed=TARGET
+[pan 1.0.0] cargo:rerun-if-env-changed=BINDGEN_EXTRA_CLANG_ARGS_x86_64-unknown-linux-gnu
+[pan 1.0.0] cargo:rerun-if-env-changed=BINDGEN_EXTRA_CLANG_ARGS_x86_64_unknown_linux_gnu
+[pan 1.0.0] cargo:rerun-if-env-changed=BINDGEN_EXTRA_CLANG_ARGS
+[pan 1.0.0] cargo:rerun-if-changed=/usr/lib/llvm-15/lib/clang/15.0.7/include/stddef.h
+[pan 1.0.0] cargo:rerun-if-changed=/usr/lib/llvm-15/lib/clang/15.0.7/include/__stddef_max_align_t.h
+[pan 1.0.0] cargo:rerun-if-changed=/usr/lib/llvm-15/lib/clang/15.0.7/include/stdint.h
+[pan 1.0.0] cargo:rerun-if-changed=/usr/include/stdint.h
+[pan 1.0.0] cargo:rerun-if-changed=/usr/include/x86_64-linux-gnu/bits/libc-header-start.h
+[pan 1.0.0] cargo:rerun-if-changed=/usr/include/features.h
+[pan 1.0.0] cargo:rerun-if-changed=/usr/include/features-time64.h
+[pan 1.0.0] cargo:rerun-if-changed=/usr/include/x86_64-linux-gnu/bits/wordsize.h
+[pan 1.0.0] cargo:rerun-if-changed=/usr/include/x86_64-linux-gnu/bits/timesize.h
+[pan 1.0.0] cargo:rerun-if-changed=/usr/include/x86_64-linux-gnu/bits/wordsize.h
+[pan 1.0.0] cargo:rerun-if-changed=/usr/include/stdc-predef.h
+[pan 1.0.0] cargo:rerun-if-changed=/usr/include/x86_64-linux-gnu/sys/cdefs.h
+[pan 1.0.0] cargo:rerun-if-changed=/usr/include/x86_64-linux-gnu/bits/wordsize.h
+[pan 1.0.0] cargo:rerun-if-changed=/usr/include/x86_64-linux-gnu/bits/long-double.h
+[pan 1.0.0] cargo:rerun-if-changed=/usr/include/x86_64-linux-gnu/gnu/stubs.h
+[pan 1.0.0] cargo:rerun-if-changed=/usr/include/x86_64-linux-gnu/gnu/stubs-64.h
+[pan 1.0.0] cargo:rerun-if-changed=/usr/include/x86_64-linux-gnu/bits/types.h
+[pan 1.0.0] cargo:rerun-if-changed=/usr/include/features.h
+[pan 1.0.0] cargo:rerun-if-changed=/usr/include/x86_64-linux-gnu/bits/wordsize.h
+[pan 1.0.0] cargo:rerun-if-changed=/usr/include/x86_64-linux-gnu/bits/timesize.h
+[pan 1.0.0] cargo:rerun-if-changed=/usr/include/x86_64-linux-gnu/bits/wordsize.h
+[pan 1.0.0] cargo:rerun-if-changed=/usr/include/x86_64-linux-gnu/bits/typesizes.h
+[pan 1.0.0] cargo:rerun-if-changed=/usr/include/x86_64-linux-gnu/bits/time64.h
+[pan 1.0.0] cargo:rerun-if-changed=/usr/include/x86_64-linux-gnu/bits/wchar.h
+[pan 1.0.0] cargo:rerun-if-changed=/usr/include/x86_64-linux-gnu/bits/wordsize.h
+[pan 1.0.0] cargo:rerun-if-changed=/usr/include/x86_64-linux-gnu/bits/stdint-intn.h
+[pan 1.0.0] cargo:rerun-if-changed=/usr/include/x86_64-linux-gnu/bits/types.h
+[pan 1.0.0] cargo:rerun-if-changed=/usr/include/x86_64-linux-gnu/bits/stdint-uintn.h
+[pan 1.0.0] cargo:rerun-if-changed=/usr/include/x86_64-linux-gnu/bits/types.h
+[pan 1.0.0] cargo:rerun-if-changed=/usr/lib/llvm-15/lib/clang/15.0.7/include/stddef.h
+[pan 1.0.0] cargo:rerun-if-changed=./include/pan/pan_cdefs.h
+[pan 1.0.0] cargo:rerun-if-changed=/usr/bin/../lib/gcc/x86_64-linux-gnu/13/../../../../include/c++/13/cstdint
+[pan 1.0.0] cargo:rerun-if-changed=/usr/bin/../lib/gcc/x86_64-linux-gnu/13/../../../../include/x86_64-linux-gnu/c++/13/bits/c++config.h
+[pan 1.0.0] cargo:rerun-if-changed=/usr/bin/../lib/gcc/x86_64-linux-gnu/13/../../../../include/x86_64-linux-gnu/c++/13/bits/os_defines.h
+[pan 1.0.0] cargo:rerun-if-changed=/usr/include/features.h
+[pan 1.0.0] cargo:rerun-if-changed=/usr/bin/../lib/gcc/x86_64-linux-gnu/13/../../../../include/x86_64-linux-gnu/c++/13/bits/cpu_defines.h
+[pan 1.0.0] cargo:rerun-if-changed=/usr/lib/llvm-15/lib/clang/15.0.7/include/stdint.h
