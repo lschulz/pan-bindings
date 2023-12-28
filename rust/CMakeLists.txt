@@ -20,8 +20,12 @@ ${RUST_BINDINGS}
 set(CARGO_FLAGS "-vv")
 
 
-if( CARGO_BUILD)
-list(APPEND CARGO_FLAGS "--target-dir ../target" )
+#if( CARGO_BUILD)
+#list(APPEND CARGO_FLAGS "--target-dir ../target" )
+#endif()
+
+if( BUILD_EXAMPLES)
+list(APPEND CARGO_FLAGS "--examples" )
 endif()
 
 add_custom_command(

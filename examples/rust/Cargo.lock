@@ -890,12 +890,16 @@ dependencies = [
  "async-std",
  "bindgen",
  "byteorder",
+ "clap",
  "cmake",
+ "env_logger",
  "futures",
  "log",
  "rand",
  "rand_pcg",
  "scionnet",
+ "simplelog",
+ "time",
  "tokio",
 ]
 

@@ -18,7 +18,7 @@ idea: let the build script figure out, from where it is invoked
 
     // let mut prj_dir = env::var("PROJECT_DIR").or( Ok( String::from(dir.to_str().unwrap()) ) );
 
-    let path_to_lib: PathBuf = match env::var("PROJECT_DIR") {
+   /* let path_to_lib: PathBuf = match env::var("PROJECT_DIR") {
         Ok(p) =>{
             PathBuf::from(p).join("/rust/src")
         },
@@ -26,7 +26,7 @@ idea: let the build script figure out, from where it is invoked
             dir.join("/src")
         }
     };
-
+*/
 
 
     let mut out_dir = env::var("OUT_DIR").unwrap();
@@ -174,6 +174,6 @@ idea: let the build script figure out, from where it is invoked
         .expect("Couldn't write bindings!");
 
     // copy bindings to PROJECT_DIR/rust/src/bindings.rs where lib.rs expects them
-   std::fs::copy(out_path, path_to_lib.join("bindings.rs")  )
+   std::fs::copy(out_path, dir.join("src/bindings.rs")  )
    .expect("cannot copy generated bindings to where lib.rs expects them");
 }

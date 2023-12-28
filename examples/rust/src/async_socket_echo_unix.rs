@@ -1,7 +1,7 @@
 extern crate clap;
-extern crate pan_bindings;
-
-use pan_bindings::*;
+// extern crate pan_bindings;
+// use pan_bindings::*;
+use pan::*;
 
 use clap::{Arg, Parser};
 use std::error::Error;
