@@ -40,7 +40,7 @@ use std::time::Duration;
 extern crate scionnet;
 use scionnet::*;
 extern crate tokio;
-use async_recursion::async_recursion;
+use async_recursion2::async_recursion;
 use log::*;
 // use tokio::io::{AsyncRead, AsyncReadExt};
 
