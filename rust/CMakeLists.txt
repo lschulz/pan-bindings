@@ -9,21 +9,18 @@ set(SOURCES
   Cargo.toml 
   src/lib.rs 
   wrapper.h
-  ${CMAKE_SOURCE_DIR}/include/pan.h
-  ${CMAKE_SOURCE_DIR}/cpp/go_handle.cpp
-  ${CMAKE_SOURCE_DIR}/include/go_handle.hpp
  )
 
 
 add_custom_target(pan-crate ALL DEPENDS  
 pan pan_cpp
-# ${RUST_BINDINGS}
+${RUST_BINDINGS}
 )
 
 add_custom_command(
     OUTPUT ${RUST_BINDINGS}
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-    COMMAND cargo build # --release -vv
+    COMMAND cargo build -vv# --release -vv
     DEPENDS ${SOURCES}
 )
 

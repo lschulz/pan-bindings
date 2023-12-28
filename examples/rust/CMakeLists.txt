@@ -15,12 +15,12 @@ set(SOURCES
 
 add_custom_target(pan-rust-examples ALL DEPENDS  
 pan pan_cpp pan-crate
-# ${RUST_BINDINGS}
+ ${RUST_EXAMPLES}
 )
 
 add_custom_command(
     OUTPUT ${RUST_EXAMPLES}
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
     COMMAND cargo build # --release -vv
-    DEPENDS ${SOURCES}
+   # DEPENDS ${SOURCES}
 )
