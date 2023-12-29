@@ -1,5 +1,6 @@
 extern crate bindgen;
-
+extern crate cc;
+use cc::*;
 use std::env;
 use std::error::Error;
 use std::fs;
@@ -75,15 +76,13 @@ fn main() {
         .arg("-c")
         .arg("-I")
         .arg("./include/pan")
-        //.arg("-I ./include/pan/pan.h")
-        //.arg("-I ./include/pan/go_handle.hpp")
+   
         .arg("-o")
         .arg(&obj_path)
         .arg("./cpp/go_handle.cpp")
         .arg("-DBINDGEN")
         .output();
-
-    match res {
+        match res {
         Ok(o) => {
             print!("output: {:?}\n", o);
         }
@@ -91,9 +90,25 @@ fn main() {
             panic!("could not compile object file: {}", e);
         }
     }
+     
+     /*
+    // error: overriding linking modifiers from command line is not supported
+        let res = cc::Build::new()
+        .cpp(true)
+        .flag("-DBINDGEN")
+        .file("./cpp/go_handle.cpp")
+        // .flag("-c")
+        .include("./include/pan")
+        .out_dir("./tmp")
+        .compile("go_handle");
+    println!("DONE with CC");
+    */
+
+
 
     // ar rcs tmp/libgo_handle.a tmp/go_handle.o
     let res1 = std::process::Command::new("ar")
+    //let res1 = cc::Build::new().cpp(true).get_archiver()  // No with cc this whole step is not required
         .arg("rcs")
         .arg(lib_path)
         .arg(obj_path)
@@ -101,6 +116,7 @@ fn main() {
     if !res1.is_ok() {
         panic!("could not emit library file: {}", res1.err().unwrap());
     }
+    
 
     let mut pan_path = find_file("libpan.a").unwrap();
     pan_path.pop();
