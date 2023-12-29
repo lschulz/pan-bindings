@@ -41,15 +41,18 @@ fn main() {
     println!("DIR: {:?}", dir);
     println!("OUT_DIR: {:?}",out_di );
 
-    std::process::Command::new("mkdir").arg("rust");
-    std::fs::copy("rust",PathBuf::from(out_di).join("rust") );
+    // std::process::Command::new("mkdir").arg( PathBuf::from(out_di).join("rust");
+    // std::fs::copy("rust",PathBuf::from(out_di).join("rust") );
 
     let mut cmake_cfg = Config::new(".");
 
     cmake_cfg.define("CARGO_BUILD", "1");
     let dst = cmake_cfg.build();
 
-    match std::process::Command::new("mkdir").arg("tmp").output() {
+    let tmp_path = PathBuf::from(out_di).join("tmp");
+
+    match std::process::Command::new("mkdir").arg(&tmp_path).output() 
+    {
         Ok(o) => {
             print!("mkdir output: {:?}\n", o);
         }
@@ -62,7 +65,7 @@ fn main() {
 
     let out_dir = env::var("OUT_DIR").unwrap();
 
-    let libdir_path = PathBuf::from("./tmp")
+    let libdir_path = tmp_path//PathBuf::from("./tmp")
         // Canonicalize the path as `rustc-link-search` requires an absolute
         // path.
         .canonicalize()
@@ -142,6 +145,7 @@ fn main() {
     println!("PAN_PATH: {}", pan_path.to_str().unwrap());
 
     println!("cargo:rustc-link-search=all=tmp");
+    println!("cargo:rustc-link-search=all={}", tmp_path.to_str().unwrap() );
     println!("cargo:rustc-link-search=all={}", &out_dir);
     println!("cargo:rustc-link-search=all={}", pan_path.to_str().unwrap());
     println!("cargo:rustc-link-search=all={}/lib", &out_dir);

@@ -1,7 +1,8 @@
 [package]
     name = "pan_bindings"
     version = "1.0.0"
-    edition = "2021"   
+    edition = "2021"
+    license = "MIT OR Apache-2.0"
     build = "build.rs"
     description= "FFI bindings for the SCION PAN Path Aware Networking library"
 
