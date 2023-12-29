@@ -177,6 +177,6 @@ fn main() {
     std::fs::copy(
         out_path.clone(),
         PathBuf::from("./rust/src").join("bindings.rs"),
-    )
-    .expect("cannot copy generated bindings to where lib.rs expects them");
+    );
+   // .expect("cannot copy generated bindings to where lib.rs expects them");
 }

@@ -7,7 +7,7 @@
 
 [lib]
 name = "pan"         
-path = "rust/src/lib.rs"
+path = "./rust/src/lib.rs"
 
 [[example]]
 name = "async_echo"          
