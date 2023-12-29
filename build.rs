@@ -1,7 +1,10 @@
 extern crate bindgen;
 
 use std::env;
+use std::error::Error;
 use std::fs;
+use std::io;
+use std::path::Path;
 use std::path::PathBuf;
 
 extern crate cmake;
@@ -9,19 +12,35 @@ use cmake::Config;
 
 use bindgen::CargoCallbacks;
 
+use walkdir::WalkDir;
+
+fn find_file(fname: &str) -> std::io::Result<PathBuf> {
+    for entry in WalkDir::new(".")
+        .follow_links(true)
+        .into_iter()
+        .filter_map(|e| e.ok())
+    {
+        let f_name = entry.file_name().to_string_lossy();
+
+        if fname == f_name {
+            return Ok(entry.into_path().clone());
+        }
+    }
+
+    Err(std::io::Error::new(io::ErrorKind::Other, "file not found"))
+}
+
 fn main() {
     println!("enter top level BUILD-SCRIPT");
 
-    let dir :PathBuf = env::current_dir().unwrap();
-    std::env::set_var("OUTER_OUT_DIR", env::var("OUT_DIR").unwrap().to_string() );
-    std::env::set_var("PROJECT_DIR", dir.to_str().unwrap() );
-    println!( "DIR: {:?}" ,dir );
-
-
+    let dir: PathBuf = env::current_dir().unwrap();
+    std::env::set_var("OUTER_OUT_DIR", env::var("OUT_DIR").unwrap().to_string());
+    std::env::set_var("PROJECT_DIR", dir.to_str().unwrap());
+    println!("DIR: {:?}", dir);
 
     let mut cmake_cfg = Config::new(".");
 
-    cmake_cfg.define("CARGO_BUILD","1");
+    cmake_cfg.define("CARGO_BUILD", "1");
     let dst = cmake_cfg.build();
 
     match std::process::Command::new("mkdir").arg("tmp").output() {
@@ -85,7 +104,6 @@ fn main() {
         .arg(obj_path)
         .output();
     if !res1.is_ok() {
-        // Panic if the command was not successful.
         panic!("could not emit library file: {}", res1.err().unwrap());
     }
 
@@ -98,9 +116,15 @@ fn main() {
 
     // println!("cargo:rustc-link-search=all={},../build/go", libdir_path.to_str().unwrap());
 
+    let mut pan_path = find_file("libpan.a").unwrap();
+    pan_path.pop();
+    println!("PAN_PATH: {}",pan_path.to_str().unwrap() );
+
     println!("cargo:rustc-link-search=all=tmp");
     println!("cargo:rustc-link-search=all={}", &out_dir);
-    println!("cargo:rustc-link-search=all=./build/go");
+    println!("cargo:rustc-link-search=all={}", pan_path.to_str().unwrap() );
+    println!("cargo:rustc-link-search=all={}/lib", &out_dir);
+    println!("cargo:rustc-link-search=all={}/build/go", &out_dir);
     println!("cargo:rustc-link-search=all=/lib/x86_64-linux-gnu");
 
     //  println!("cargo:rustc-link-search=../build/go");
@@ -145,7 +169,9 @@ fn main() {
         .write_to_file(out_path.clone())
         .expect("Couldn't write bindings!");
 
-        std::fs::copy(out_path.clone(), PathBuf::from("./rust/src").join("bindings.rs")  )
-        .expect("cannot copy generated bindings to where lib.rs expects them");
-    
+    std::fs::copy(
+        out_path.clone(),
+        PathBuf::from("./rust/src").join("bindings.rs"),
+    )
+    .expect("cannot copy generated bindings to where lib.rs expects them");
 }

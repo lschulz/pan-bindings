@@ -1,9 +1,9 @@
 [package]
     name = "pan_bindings"
     version = "1.0.0"
-    edition = "2021"
-    #build = "rust/build.rs"
+    edition = "2021"   
     build = "build.rs"
+    description= "FFI bindings for the SCION PAN Path Aware Networking library"
 
 [lib]
 name = "pan"         
@@ -26,16 +26,14 @@ crate-type=["bin"]
 
 [[example]]
 name = "async_socket_echo_unix"          
-path = "examples/rust/src/async_socket_echo_unix.rs"  
+path = "examples/rust/src/async_socket_echo_unix.rs"
 crate-type=["bin"]
 
 
 [build-dependencies]
 bindgen = "0.65.1"
 cmake = "0.1.31"
-tokio = { version = "1.0", features = ["full"] }
-log = "0.4.20"
-futures = "0.3.29"
+walkdir = "2"
 
 [dependencies]
 async-std = "1.12.0"
@@ -43,7 +41,7 @@ byteorder = "1.5.0"
 rand_pcg = "0.3.1"
 rand = { version = "0.8.5", default-features = true }
 tokio = { version = "1.0", features = ["full"] }
-bindgen = "0.65.1"
+#bindgen = "0.65.1"
 futures = "0.3.29"
 async-recursion2 = {version ="1.0.5"}
 scionnet ={version="0.0.2" }
@@ -51,14 +49,6 @@ log = "0.4.20"
 
 ## for the examples
 clap = { version = "4.0", features = ["derive"] }
-##pan_bindings  = { path= "../../rust" }
-##tokio = { version = "1.0", features = ["full"] }
-#bindgen = "0.65.1"
 time = "0.3.30"
 simplelog = "^0.12.0"
 env_logger= "0.10.1"
-#simple_logger = {version = "4.3.0", default-features = false, features = ["timestamps"] }
-##log = "0.4.20"
-#futures-io = { version = "0.3.19", optional = true }
-##futures = "0.3.29"
-##scionnet ={version="0.0.2"}
