@@ -117,8 +117,20 @@ fn main() {
         panic!("could not emit library file: {}", res1.err().unwrap());
     }
     
+    let mut libpan_name: String = "libpan.a".to_string();
+    let mut pan_name: String = "pan".to_string();
 
-    let mut pan_path = find_file("libpan.a").unwrap();
+    let profile = std::env::var("PROFILE").unwrap();
+    match profile.as_str() {
+        "debug" => {
+            libpan_name = "libpand.a".to_string();
+            pan_name = "pand".to_string();
+        },
+        "release" => {},
+        _ => {},
+    }
+
+    let mut pan_path = find_file(&libpan_name).unwrap();
     pan_path.pop();
     println!("PAN_PATH: {}", pan_path.to_str().unwrap());
 
@@ -130,7 +142,7 @@ fn main() {
     println!("cargo:rustc-link-search=all=/lib/x86_64-linux-gnu");
 
     println!("cargo:rustc-link-lib=static:+bundle=go_handle");
-    println!("cargo:rustc-link-lib=static:+bundle=pan");
+    println!("cargo:rustc-link-lib=static:+bundle={}",&pan_name);
     println!("cargo:rustc-link-lib=stdc++");
     //println!("cargo:rustc-link-lib=go_handle");
     //println!("cargo:rustc-link-lib=pan");
