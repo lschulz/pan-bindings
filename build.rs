@@ -15,8 +15,8 @@ use bindgen::CargoCallbacks;
 
 use walkdir::WalkDir;
 
-fn find_file(fname: &str) -> std::io::Result<PathBuf> {
-    for entry in WalkDir::new(".")
+fn find_file(start_dir: Option<&str>, fname: &str) -> std::io::Result<PathBuf> {
+    for entry in WalkDir::new(start_dir.unwrap_or("."))
         .follow_links(true)
         .into_iter()
         .filter_map(|e| e.ok())
@@ -140,7 +140,7 @@ fn main() {
         _ => {},
     }
 
-    let mut pan_path = find_file(&libpan_name).unwrap();
+    let mut pan_path = find_file(Some(&out_dir),&libpan_name).unwrap();
     pan_path.pop();
     println!("PAN_PATH: {}", pan_path.to_str().unwrap());
 
