@@ -35,9 +35,14 @@ fn main() {
     println!("enter top level BUILD-SCRIPT");
 
     let dir: PathBuf = env::current_dir().unwrap();
-    std::env::set_var("OUTER_OUT_DIR", env::var("OUT_DIR").unwrap().to_string());
+    let out_di = env::var("OUT_DIR").unwrap().to_string();
+    std::env::set_var("OUTER_OUT_DIR", &out_di);
     std::env::set_var("PROJECT_DIR", dir.to_str().unwrap());
     println!("DIR: {:?}", dir);
+    println!("OUT_DIR: {:?}",out_di );
+
+    std::process::Command::new("mkdir").arg("rust");
+    std::fs::copy("rust",PathBuf::from(out_di).join("rust") );
 
     let mut cmake_cfg = Config::new(".");
 
@@ -52,6 +57,8 @@ fn main() {
             panic!("mkdir failed: {}", e);
         }
     }
+
+   
 
     let out_dir = env::var("OUT_DIR").unwrap();
 

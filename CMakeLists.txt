@@ -26,6 +26,13 @@ message(STATUS "BUILD RUST WITH CMAKE")
     add_subdirectory(rust)
 endif()
 
+if(BUILD_RUST AND CARGO_BUILD)
+#copy rust recursively to install dir
+message(STATTUS "current_src_dir: ${CMAKE_CURRENT_SOURCE_DIR}")
+message(STATTUS "current_bin_dir: ${CMAKE_CURRENT_BINARY_DIR}")
+install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/rust DESTINATION .)
+endif()
+
 # if(BUILD_RUST AND BUILD_EXAMPLES )
 if(BUILD_RUST AND BUILD_EXAMPLES AND NOT CARGO_BUILD)
     add_subdirectory(examples/rust)
