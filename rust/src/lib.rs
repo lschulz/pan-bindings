@@ -52,6 +52,88 @@ use rand::{Rng, SeedableRng};
 use rand_pcg::Pcg32;
 // use  rand::rngs::StdRng;
 
+#[doc = " \\brief Wrapper for Cgo handles. Manages the lifetime of the contained handle.\n GoHandle cannot be copied, use duplicate() to create a new unique duplicate\n handle."]
+#[repr(C)]
+#[derive(Debug)]
+pub struct GoHandle {
+    pub handle: ::std::os::raw::c_ulong,
+}
+pub const GoHandle_INVALID_HANDLE: ::std::os::raw::c_ulong = 0;
+
+impl GoHandle {
+    #[inline]
+    pub unsafe fn Duplicate(handle: ::std::os::raw::c_ulong) -> GoHandle {
+      Self{ handle: PanDuplicateHandle(handle.try_into().unwrap()) as u64 }
+    }
+    #[inline]
+    pub unsafe fn duplicate(& self) -> GoHandle {
+        Self{ handle: PanDuplicateHandle(self.handle.try_into().unwrap()) as u64}
+    }
+    #[inline]
+    #[doc=" Check whether the handle is not `PAN_INVALID_HANDLE`."]
+    pub unsafe fn isValid(&self) -> bool {
+      self.handle != GoHandle_INVALID_HANDLE
+    }
+    #[inline]
+    #[doc="Get the contained handle."]
+    pub unsafe fn get(&self) -> ::std::os::raw::c_ulong {
+        return self.handle
+    }
+    #[inline]
+    pub unsafe fn getAddressOf(& mut self) -> *mut ::std::os::raw::c_ulong {
+      return &mut self.handle
+    }
+    #[inline]
+    pub unsafe fn resetAndGetAddressOf(&mut self) -> *mut ::std::os::raw::c_ulong {
+        self.reset1();
+        return &mut self.handle
+    }
+    #[inline]
+    #[doc="Delete the owned handle and assign a new one."]
+    pub unsafe fn reset(&mut self, newHandle: ::std::os::raw::c_ulong) {
+      self.reset1();
+      self.handle = newHandle;
+    }
+    #[inline]
+    pub unsafe fn reset1(&mut self) {
+        if (self.handle != GoHandle_INVALID_HANDLE)
+        {
+            PanDeleteHandle(self.handle.try_into().unwrap());
+            self.handle = GoHandle_INVALID_HANDLE;
+        }
+    }
+    #[inline]
+    #[doc=" Release ownership of the handle and return it."]
+    pub unsafe fn release(&mut self) -> ::std::os::raw::c_ulong {
+        let tmp = self.handle;
+        self.handle = GoHandle_INVALID_HANDLE;
+        return tmp;
+    }
+    #[inline]
+    pub unsafe fn new() -> Self {
+        Self{handle: GoHandle_INVALID_HANDLE}
+    }
+    #[inline]
+    pub unsafe fn new1(h: ::std::os::raw::c_ulong) -> Self {
+      Self{handle: h }
+    }
+    #[inline]
+    #[doc="copy ctor"]
+    pub unsafe fn new2(other: *const GoHandle) -> Self {
+        (*other).duplicate()
+    }
+    /* not needed, as this is default in rust
+    #[inline]
+    #[doc="move ctor"]
+    pub unsafe fn new3(other: *mut GoHandle) -> Self {
+       
+    }*/
+    #[inline]
+    pub unsafe fn destruct(&mut self) {
+      self.reset1();
+    }
+}
+
 mod bindings;
 //pub use self::bindings::PanUDPAddr;
 
@@ -118,10 +200,10 @@ impl fmt::Display for panError {
     }
 }
 
-impl Default for Pan_GoHandle {
+impl Default for GoHandle {
     fn default() -> Self {
         Self {
-            handle: Pan_GoHandle_INVALID_HANDLE,
+            handle: GoHandle_INVALID_HANDLE,
         }
     }
 }
@@ -142,11 +224,11 @@ pub trait GoHandleOwner {
 use std::os::raw::*;
 
 pub struct PathInterface {
-    h: Pan_GoHandle,
+    h: GoHandle,
 }
 
 impl PathInterface {
-    fn new(handle: Pan_GoHandle) -> Self {
+    fn new(handle: GoHandle) -> Self {
         PathInterface { h: handle }
     }
 }
@@ -154,7 +236,7 @@ impl PathInterface {
 impl Default for PathInterface {
     fn default() -> Self {
         Self {
-            h: Pan_GoHandle::default(),
+            h: GoHandle::default(),
         }
     }
 }
@@ -177,7 +259,7 @@ impl GoHandleOwner for PathInterface {
 }
 
 pub struct PathFingerprint {
-    h: Pan_GoHandle,
+    h: GoHandle,
 }
 
 impl PartialEq for PathFingerprint {
@@ -192,7 +274,7 @@ impl PartialEq for PathFingerprint {
 }
 
 impl PathFingerprint {
-    fn new(handle: Pan_GoHandle) -> Self {
+    fn new(handle: GoHandle) -> Self {
         PathFingerprint { h: handle }
     }
 }
@@ -200,7 +282,7 @@ impl PathFingerprint {
 impl Default for PathFingerprint {
     fn default() -> Self {
         Self {
-            h: Pan_GoHandle::default(),
+            h: GoHandle::default(),
         }
     }
 }
@@ -224,11 +306,11 @@ impl GoHandleOwner for PathFingerprint {
 
 #[derive(Debug)]
 pub struct Path {
-    h: Pan_GoHandle,
+    h: GoHandle,
 }
 
 impl Path {
-    pub fn new(handle: Pan_GoHandle) -> Self {
+    pub fn new(handle: GoHandle) -> Self {
         Self { h: handle }
     }
 
@@ -247,7 +329,7 @@ impl Path {
             if !self.is_valid() {
                 panic!(" attempt to invoke method on invalid Path ");
             }
-            PathFingerprint::new(Pan_GoHandle::new1(
+            PathFingerprint::new(GoHandle::new1(
                 PanPathGetFingerprint(self.get_handle()) as u64
             ))
         }
@@ -266,14 +348,14 @@ impl Path {
 impl Default for Path {
     fn default() -> Self {
         Self {
-            h: Pan_GoHandle::default(),
+            h: GoHandle::default(),
         }
     }
 }
 
 impl Clone for Path {
     fn clone(&self) -> Path {
-        unsafe { Path::new(Pan_GoHandle_Duplicate(self.get_handle() as u64)) }
+        unsafe { Path::new(GoHandle::Duplicate(self.get_handle() as u64)) }
     }
 }
 
@@ -344,8 +426,8 @@ pub trait PathPolicy: GoHandleOwner + Send + fmt::Debug {
 
         for i in 0..count {
             let ptr = *paths.add(i);
-            // let handle = Pan_GoHandle_Duplicate( ptr as u64); // fails -> invalid GoHandle
-            let mut handle = Pan_GoHandle::new1(ptr as u64);
+            // let handle = GoHandle_Duplicate( ptr as u64); // fails -> invalid GoHandle
+            let mut handle = GoHandle::new1(ptr as u64);
             //  path_obj.push(  (Path::new(handle.duplicate() ),ptr as usize ) ); // segfaults
             path_obj.push((Path::new(handle), ptr as usize));
         }
@@ -380,13 +462,13 @@ pub trait PathPolicy: GoHandleOwner + Send + fmt::Debug {
 // regardless of its attributes
 #[derive(Debug)]
 pub struct FstBestPolicy {
-    h: Pan_GoHandle,
+    h: GoHandle,
 }
 
 impl Default for FstBestPolicy {
     fn default() -> Self {
         FstBestPolicy {
-            h: Pan_GoHandle::default(),
+            h: GoHandle::default(),
         }
     }
 }
@@ -497,11 +579,11 @@ pub trait PathSelector: GoHandleOwner + Send + fmt::Debug {
         let mut path_objs: Vec<Path> = Vec::<Path>::new();
         path_objs.reserve(count);
         for i in 0..count {
-            path_objs.push(Path::new(Pan_GoHandle::new1(*paths.add(i) as u64)));
+            path_objs.push(Path::new(GoHandle::new1(*paths.add(i) as u64)));
         }
         bx.initialize(
-            &Endpoint::new(Pan_GoHandle::new1(local as u64)),
-            &Endpoint::new(Pan_GoHandle::new1(remote as u64)),
+            &Endpoint::new(GoHandle::new1(local as u64)),
+            &Endpoint::new(GoHandle::new1(remote as u64)),
             path_objs,
         );
         Box::into_raw(bx);
@@ -515,7 +597,7 @@ pub trait PathSelector: GoHandleOwner + Send + fmt::Debug {
         let mut path_objs: Vec<Path> = Vec::<Path>::new();
         path_objs.reserve(count);
         for i in 0..count {
-            path_objs.push(Path::new(Pan_GoHandle::new1(*paths.add(i) as u64)));
+            path_objs.push(Path::new(GoHandle::new1(*paths.add(i) as u64)));
         }
         bx.refresh(path_objs);
 
@@ -529,8 +611,8 @@ pub trait PathSelector: GoHandleOwner + Send + fmt::Debug {
         let mut bx = path_selector::from_raw(user);
 
         bx.path_down(
-            PathFingerprint::new(Pan_GoHandle::new1(pf as u64)),
-            PathInterface::new(Pan_GoHandle::new1(pi as u64)),
+            PathFingerprint::new(GoHandle::new1(pf as u64)),
+            PathInterface::new(GoHandle::new1(pi as u64)),
         );
 
         Box::into_raw(bx);
@@ -554,7 +636,7 @@ pub trait PathSelector: GoHandleOwner + Send + fmt::Debug {
 
 #[derive(Debug)]
 pub struct DefaultSelector {
-    h: Pan_GoHandle,
+    h: GoHandle,
     paths: Vec<Path>,
     curr_path: usize,
 }
@@ -562,7 +644,7 @@ pub struct DefaultSelector {
 impl Default for DefaultSelector {
     fn default() -> Self {
         Self {
-            h: Pan_GoHandle::default(),
+            h: GoHandle::default(),
             paths: Vec::<Path>::new(),
             curr_path: 0,
         }
@@ -694,7 +776,7 @@ pub trait ReplySelector: GoHandleOwner + Send + fmt::Debug {
         let mut bx = reply_selector::from_raw(user);
 
         let res = bx
-            .path(Endpoint::new(Pan_GoHandle::new1(remote as u64)))
+            .path(Endpoint::new(GoHandle::new1(remote as u64)))
             .release_handle();
         Box::into_raw(bx);
         res
@@ -707,7 +789,7 @@ pub trait ReplySelector: GoHandleOwner + Send + fmt::Debug {
     {
         let mut bx = reply_selector::from_raw(user);
 
-        let res = bx.initialize(Endpoint::new(Pan_GoHandle::new1(local as u64)));
+        let res = bx.initialize(Endpoint::new(GoHandle::new1(local as u64)));
         Box::into_raw(bx);
         res
     }
@@ -719,8 +801,8 @@ pub trait ReplySelector: GoHandleOwner + Send + fmt::Debug {
         let mut bx = reply_selector::from_raw(user);
 
         let res = bx.record(
-            Endpoint::new(Pan_GoHandle::new1(remote as u64)),
-            Path::new(Pan_GoHandle::new1(path as u64)),
+            Endpoint::new(GoHandle::new1(remote as u64)),
+            Path::new(GoHandle::new1(path as u64)),
         );
         Box::into_raw(bx);
         res
@@ -733,8 +815,8 @@ pub trait ReplySelector: GoHandleOwner + Send + fmt::Debug {
         let mut bx = reply_selector::from_raw(user);
 
         let res = bx.path_down(
-            PathFingerprint::new(Pan_GoHandle::new1(pf as u64)),
-            PathInterface::new(Pan_GoHandle::new1(pi as u64)),
+            PathFingerprint::new(GoHandle::new1(pf as u64)),
+            PathInterface::new(GoHandle::new1(pi as u64)),
         );
         Box::into_raw(bx);
         res
@@ -760,7 +842,7 @@ pub trait ReplySelector: GoHandleOwner + Send + fmt::Debug {
 
 #[derive(Debug)]
 pub struct DefaultReplySelector {
-    h: Pan_GoHandle,
+    h: GoHandle,
     remotes: HashMap<String, Path>,
 }
 
@@ -768,7 +850,7 @@ impl Default for DefaultReplySelector {
     fn default() -> Self {
         Self {
             remotes: HashMap::default(),
-            h: Pan_GoHandle::default(),
+            h: GoHandle::default(),
         }
     }
 }
@@ -843,13 +925,13 @@ impl ReplySelector for DefaultReplySelector {
 //mod upd { // maybe unnecessary
 
 pub struct Endpoint {
-    h: Pan_GoHandle,
+    h: GoHandle,
 }
 
 impl Default for Endpoint {
     fn default() -> Self {
         Self {
-            h: Pan_GoHandle::default(),
+            h: GoHandle::default(),
         }
     }
 }
@@ -907,7 +989,7 @@ impl Endpoint {
         as_from_ia(self.get_ia())
     }
 
-    pub fn new(handle: Pan_GoHandle) -> Endpoint {
+    pub fn new(handle: GoHandle) -> Endpoint {
         Self { h: handle }
     }
 
@@ -988,7 +1070,7 @@ use std::error::Error;
 
 pub fn resolve_udp_addr(address: &str) -> Result<Endpoint, panError> {
     unsafe {
-        let mut h: Pan_GoHandle = Default::default();
+        let mut h: GoHandle = Default::default();
         let err: PanError = PanResolveUDPAddrN(
             address.as_ptr() as *const ::std::os::raw::c_char,
             address.len() as i32,
@@ -1007,11 +1089,11 @@ pub fn resolve_udp_addr(address: &str) -> Result<Endpoint, panError> {
 
 #[derive(Debug)]
 pub struct ListenSockAdapter {
-    h: Pan_GoHandle,
+    h: GoHandle,
 }
 
 impl ListenSockAdapter {
-    pub fn new(handle: Pan_GoHandle) -> Self {
+    pub fn new(handle: GoHandle) -> Self {
         Self { h: handle }
     }
 
@@ -1027,7 +1109,7 @@ impl ListenSockAdapter {
 impl Default for ListenSockAdapter {
     fn default() -> Self {
         Self {
-            h: Pan_GoHandle::default(),
+            h: GoHandle::default(),
         }
     }
 }
@@ -1051,7 +1133,7 @@ impl GoHandleOwner for ListenSockAdapter {
 
 #[derive(Debug)]
 pub struct ScionSocket {
-    h: Pan_GoHandle,
+    h: GoHandle,
     adapter: Option<ListenSockAdapter>,
     unix_sock: Option<UnixDatagram>,
 
@@ -1115,7 +1197,7 @@ impl Default for ScionSocket {
         let mtx_r = Arc::new(Mutex::new(rstate));
         let mtx_w = Arc::new(Mutex::new(wstate));
 
-        let mut handle = unsafe { Pan_GoHandle::new1(PanNewScionSocket2() as u64) };
+        let mut handle = unsafe { GoHandle::new1(PanNewScionSocket2() as u64) };
         unsafe {
             assert!(handle.isValid());
         }
@@ -1500,7 +1582,7 @@ impl ScionSocket {
             }
             // this has to go before creation of adapter
             let mut rsock = UnixDatagram::bind(rust_socket_path).await; 
-            let mut handle: Pan_GoHandle = Default::default();
+            let mut handle: GoHandle = Default::default();
             let err: PanError = PanNewListenSockAdapter2(
                 self.get_handle(),
                 go_socket_path.as_ptr() as *const i8,
@@ -1553,7 +1635,7 @@ impl ScionSocket {
         let mut handle = unsafe {
             let add = listen.to_string();
             let h = PanNewScionSocket(add.as_ptr() as *const i8, add.len() as i32) as u64;
-            Pan_GoHandle::new1(h)
+            GoHandle::new1(h)
         };
 
         let s = Self {
@@ -1649,7 +1731,7 @@ impl ScionSocket {
 
 #[derive(Debug)]
 pub struct ListenConn {
-    h: Pan_GoHandle,
+    h: GoHandle,
     selector: Option<Box<dyn ReplySelector + Send + Sync>>,
 
     mtx_read: Arc<Mutex<ReadState>>,
@@ -1693,7 +1775,7 @@ impl Default for ListenConn {
         let mtx_w = Arc::new(Mutex::new(wstate));
 
         Self {
-            h: Pan_GoHandle::default(),
+            h: GoHandle::default(),
             selector: None,
             mtx_read: mtx_r,
             mtx_write: mtx_w,
@@ -2623,7 +2705,7 @@ impl ListenConn {
                 if self.selector.is_some() {
                     self.selector.as_ref().unwrap().get_handle()
                 } else {
-                    Pan_GoHandle::default().get() as usize
+                    GoHandle::default().get() as usize
                 },
                 self.h.resetAndGetAddressOf() as *mut usize,
             );
@@ -2641,7 +2723,7 @@ impl ListenConn {
             if !self.is_valid() {
                 panic!(" attempt to invoke method on invalid ListenConn ");
             }
-            Endpoint::new(Pan_GoHandle::new1(
+            Endpoint::new(GoHandle::new1(
                 PanListenConnLocalAddr(self.get_handle()) as u64,
             ))
         }
@@ -2652,7 +2734,7 @@ impl ListenConn {
             if !self.is_valid() {
                 panic!(" attempt to invoke method on invalid ListenConn ");
             }
-            let mut h_from: Pan_GoHandle = Pan_GoHandle::default();
+            let mut h_from: GoHandle = GoHandle::default();
             let mut n: i32 = 0;
             let err = PanListenConnReadFrom(
                 self.get_handle(),
@@ -2679,7 +2761,7 @@ impl ListenConn {
             if !self.is_valid() {
                 panic!(" attempt to invoke method on invalid ListenConn ");
             }
-            let mut h_from: Pan_GoHandle = Pan_GoHandle::default();
+            let mut h_from: GoHandle = GoHandle::default();
             let mut n: i32 = 0;
             let err = PanListenConnReadFrom(
                 self.get_handle(),
@@ -2709,8 +2791,8 @@ impl ListenConn {
             if !self.is_valid() {
                 panic!(" attempt to invoke method on invalid ListenConn ");
             }
-            let mut h_from: Pan_GoHandle = Pan_GoHandle::default();
-            let mut h_path: Pan_GoHandle = Pan_GoHandle::default();
+            let mut h_from: GoHandle = GoHandle::default();
+            let mut h_path: GoHandle = GoHandle::default();
             let mut n: i32 = 0;
 
             let err = PanListenConnReadFromVia(
@@ -2791,7 +2873,7 @@ impl ListenConn {
             if !self.is_valid() {
                 panic!(" attempt to invoke method on invalid ListenConn ");
             }
-            let mut handle: Pan_GoHandle = Default::default();
+            let mut handle: GoHandle = Default::default();
             let err: PanError = PanNewListenSockAdapter(
                 self.get_handle(),
                 go_socket_path.as_ptr() as *const i8,
@@ -2825,11 +2907,11 @@ impl GoHandleOwner for ListenConn {
 }
 
 pub struct ConnSockAdapter {
-    h: Pan_GoHandle,
+    h: GoHandle,
 }
 
 impl ConnSockAdapter {
-    pub fn new(handle: Pan_GoHandle) -> ConnSockAdapter {
+    pub fn new(handle: GoHandle) -> ConnSockAdapter {
         Self { h: handle }
     }
 
@@ -2846,7 +2928,7 @@ impl ConnSockAdapter {
 impl Default for ConnSockAdapter {
     fn default() -> Self {
         Self {
-            h: Pan_GoHandle::default(),
+            h: GoHandle::default(),
         }
     }
 }
@@ -2869,7 +2951,7 @@ impl GoHandleOwner for ConnSockAdapter {
 }
 #[derive(Debug)]
 pub struct Conn {
-    h: Pan_GoHandle,
+    h: GoHandle,
     policy: Option<Box<dyn PathPolicy + Sync + Send>>,
     selector: Option<Box<dyn PathSelector + Sync + Send>>,
 
@@ -3004,7 +3086,7 @@ impl Conn {
             if !self.is_valid() {
                 panic!(" attempt to invoke method on invalid Conn ");
             }
-            Endpoint::new(Pan_GoHandle::new1(
+            Endpoint::new(GoHandle::new1(
                 PanConnLocalAddr(self.get_handle()) as u64
             ))
         }
@@ -3015,7 +3097,7 @@ impl Conn {
             if !self.is_valid() {
                 panic!(" attempt to invoke method on invalid Conn ");
             }
-            Endpoint::new(Pan_GoHandle::new1(
+            Endpoint::new(GoHandle::new1(
                 PanConnRemoteAddr(self.get_handle()) as u64
             ))
         }
@@ -3163,7 +3245,7 @@ impl Conn {
             if !self.is_valid() {
                 panic!(" attempt to invoke method on invalid Conn ");
             }
-            let mut h_path: Pan_GoHandle = Pan_GoHandle::default();
+            let mut h_path: GoHandle = GoHandle::default();
             let mut n: i32 = 0;
             let err = PanConnReadVia(
                 self.get_handle(),
@@ -3190,7 +3272,7 @@ impl Conn {
             if !self.is_valid() {
                 panic!(" attempt to invoke method on invalid Conn ");
             }
-            let mut handle: Pan_GoHandle = Pan_GoHandle::default();
+            let mut handle: GoHandle = GoHandle::default();
 
             let err = PanNewConnSockAdapter(
                 self.get_handle(),
@@ -3212,7 +3294,7 @@ impl Default for Conn {
     fn default() -> Self {
         unsafe {
             Self {
-                h: Pan_GoHandle::default(),
+                h: GoHandle::default(),
                 selector: None,
                 policy: None,
                 mtx_read: Arc::new(Mutex::new(ReadState::Initial)),
