@@ -717,7 +717,6 @@ func PanNewScionSocket(listen *C.cchar_t, n C.int) C.PanScionSocket {
 		go fcn01(cch)
 		mu01.Unlock()
 	}
-	fmt.Println("pannewscionsocket returned successfully")
 	return p
 }
 
@@ -770,7 +769,6 @@ func PanScionSocketGetLocalAddr(socket C.PanScionSocket) *C.char {
 }
 
 func PanSocketLikeReadFromAsyncImpl(ch cgo.Handle, buffer *C.void, len C.int, from *C.PanUDPAddr, n *C.int, timeout_duration C.int, waker C.OnCompletionWaker, arc_conn *C.void) C.PanError {
-	fmt.Println("PanSocketLikeReadFromAsyncImpl")
 	c := ch.Value().(SocketLike)
 
 	p := unsafe.Slice((*byte)(unsafe.Pointer(buffer)), len)
@@ -2064,7 +2062,6 @@ var chann02s map[uintptr]chan tuple02
 var chann03s map[uintptr]chan tuple03
 
 func init() {
-	fmt.Println("INIT CALLED")
 
 	if err := envFlags.LoadExternalVars(); err != nil {
 		panic(fmt.Sprintf("pan initialization failed: %v", err))
@@ -2418,7 +2415,7 @@ func NewListenSockAdapter(
 		unix_remote: remote,
 		listen_addr: listen_addr,
 	}
-	fmt.Printf("%v -> %v\n", listen_addr, client_addr)
+	// fmt.Printf("%v -> %v\n", listen_addr, client_addr)
 	go adapter.panToUnix()
 	go adapter.unixToPan()
 
@@ -2437,7 +2434,7 @@ func (ls *ListenSockAdapter) panToUnix() {
 	for {
 		// Read from network
 		read, from, err := ls.pan_conn.ReadFrom(buffer[ADDR_HDR_SIZE:])
-		fmt.Printf("read %v bytes from pan \n", read)
+
 		if err != nil {
 			fmt.Printf("failed to read from pan: %v\n", err)
 			return
@@ -2467,7 +2464,7 @@ func (ls *ListenSockAdapter) panToUnix() {
 		var n int = 0
 		// Pass to unix socket
 		n, err = ls.unix_conn.WriteToUnix(message, ls.unix_remote)
-		fmt.Printf("wrote %v bytes to unix ", n)
+
 		if err != nil {
 			fmt.Printf("failed to write to unix: %v", err)
 			return
@@ -2480,7 +2477,7 @@ func (ls *ListenSockAdapter) unixToPan() {
 	for {
 		// Read from unix socket
 		read, _, err := ls.unix_conn.ReadFromUnix(buffer)
-		fmt.Printf("read %v byte from unix\n", read)
+
 		if err != nil {
 			fmt.Printf("failed to read from unix: %v\n", err)
 			return
@@ -2507,7 +2504,7 @@ func (ls *ListenSockAdapter) unixToPan() {
 		// Pass to network socket
 		var n int
 		n, err = ls.pan_conn.WriteTo(buffer[ADDR_HDR_SIZE:read], to)
-		fmt.Printf("wrote %v byte to pan ->%v\n", n, to.String())
+
 		if err != nil {
 			fmt.Printf("failed to write to pan: %v\n", err)
 			return
