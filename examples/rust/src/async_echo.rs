@@ -109,13 +109,13 @@ impl Server {
                     Ok((read, from_addr, path_from)) => {
                         cnt+=1;
                         debug!("async-read successfull ");
-                        from = Endpoint::new(Pan_GoHandle::new1(from_addr as u64));
+                        from = Endpoint::new(GoHandle::new1(from_addr as u64));
 
                         println!("\n{} received {} bytes from {}",cnt, read, from.to_string());
                         if args.show_path {
                             // print path
                             debug!("path_from: {}", path_from);
-                            path = Path::new(Pan_GoHandle::new1(path_from as u64));
+                            path = Path::new(GoHandle::new1(path_from as u64));
                             println!("path: {}", path.to_string());
                         }
 
@@ -243,7 +243,7 @@ impl Client {
                         match Conn::async_read_via(self.conn.clone(), &mut recv_buff).await {
                             Ok((i, p)) => {
                                 res = Ok(i);
-                                path = Path::new(Pan_GoHandle::new1(p as u64));
+                                path = Path::new(GoHandle::new1(p as u64));
                             }
                             Err(e) => {
                                 res = Err(e);

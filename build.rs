@@ -39,22 +39,15 @@ fn main() {
     std::env::set_var("OUTER_OUT_DIR", &out_di);
     std::env::set_var("PROJECT_DIR", dir.to_str().unwrap());
     println!("DIR: {:?}", dir);
-    println!("OUT_DIR: {:?}",out_di );
+    println!("OUT_DIR: {:?}", out_di);
 
     let mut cmake_cfg = Config::new(".");
 
     cmake_cfg.define("CARGO_BUILD", "1");
     let dst = cmake_cfg.build();
 
-    
-
-   
-
     let out_dir = env::var("OUT_DIR").unwrap();
 
-      
-
-    
     let mut libpan_name: String = "libpan.a".to_string();
     let mut pan_name: String = "pan".to_string();
 
@@ -63,15 +56,14 @@ fn main() {
         "debug" => {
             libpan_name = "libpand.a".to_string();
             pan_name = "pand".to_string();
-        },
-        "release" => {},
-        _ => {},
+        }
+        "release" => {}
+        _ => {}
     }
 
-    let mut pan_path = find_file(Some(&out_dir),&libpan_name).unwrap();
+    let mut pan_path = find_file(Some(&out_dir), &libpan_name).unwrap();
     pan_path.pop();
     println!("PAN_PATH: {}", pan_path.to_str().unwrap());
-
 
     println!("cargo:rustc-link-search=all={}", &out_dir);
     println!("cargo:rustc-link-search=all={}", pan_path.to_str().unwrap());
@@ -79,8 +71,8 @@ fn main() {
     println!("cargo:rustc-link-search=all={}/build/go", &out_dir);
     println!("cargo:rustc-link-search=all=/lib/x86_64-linux-gnu");
 
-    println!("cargo:rustc-link-lib=static:+bundle={}",&pan_name);
-  //  println!("cargo:rustc-link-lib=stdc++");
+    println!("cargo:rustc-link-lib=static:+bundle={}", &pan_name);
+    //  println!("cargo:rustc-link-lib=stdc++");
     //println!("cargo:rustc-link-lib=go_handle");
     //println!("cargo:rustc-link-lib=pan");
 
@@ -94,12 +86,12 @@ fn main() {
     // the resulting bindings.
     let bindings = bindgen::Builder::default()
         .clang_arg("-DBINDGEN")
-      //  .clang_arg("-xc++")
-      //  .clang_arg("-std=c++11")
+        //  .clang_arg("-xc++")
+        //  .clang_arg("-std=c++11")
         .clang_arg("-I ./include")
         .clang_arg("-I ./include/pan")
         .header("./include/pan/pan_cdefs.h")
-        .header("./include/pan/pan.h")    
+        .header("./include/pan/pan.h")
         .parse_callbacks(Box::new(CargoCallbacks))
         .generate()
         .expect("Unable to generate bindings");
@@ -113,5 +105,5 @@ fn main() {
         out_path.clone(),
         PathBuf::from("./rust/src").join("bindings.rs"),
     );
-   // .expect("cannot copy generated bindings to where lib.rs expects them");
+    // .expect("cannot copy generated bindings to where lib.rs expects them");
 }

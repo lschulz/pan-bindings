@@ -2461,9 +2461,8 @@ func (ls *ListenSockAdapter) panToUnix() {
 		binary.LittleEndian.PutUint16(buffer[28:30], pan_from.Port)
 		message := buffer[:ADDR_HDR_SIZE+read]
 
-		var n int = 0
 		// Pass to unix socket
-		n, err = ls.unix_conn.WriteToUnix(message, ls.unix_remote)
+		_, err = ls.unix_conn.WriteToUnix(message, ls.unix_remote)
 
 		if err != nil {
 			fmt.Printf("failed to write to unix: %v", err)
@@ -2502,8 +2501,8 @@ func (ls *ListenSockAdapter) unixToPan() {
 		to.Port = binary.LittleEndian.Uint16(buffer[28:30])
 
 		// Pass to network socket
-		var n int
-		n, err = ls.pan_conn.WriteTo(buffer[ADDR_HDR_SIZE:read], to)
+
+		_, err = ls.pan_conn.WriteTo(buffer[ADDR_HDR_SIZE:read], to)
 
 		if err != nil {
 			fmt.Printf("failed to write to pan: %v\n", err)

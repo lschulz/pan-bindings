@@ -12,11 +12,11 @@ set(BUILD_SHARED_LIBS OFF CACHE BOOL "Build shared libraries")
 
 add_subdirectory(go)
 
-if (BUILD_CPP)
+if (BUILD_CPP AND NOT CARGO_BUILD)
     add_subdirectory(cpp)
 endif()
 
-if (BUILD_EXAMPLES AND BUILD_CPP)
+if (BUILD_EXAMPLES AND BUILD_CPP AND NOT CARGO_BUILD)
     add_subdirectory(examples/cpp)
 endif()
 
@@ -28,8 +28,8 @@ endif()
 
 if(BUILD_RUST AND CARGO_BUILD)
 #copy rust recursively to install dir
-message(STATTUS "current_src_dir: ${CMAKE_CURRENT_SOURCE_DIR}")
-message(STATTUS "current_bin_dir: ${CMAKE_CURRENT_BINARY_DIR}")
+message(STATUS "current_src_dir: ${CMAKE_CURRENT_SOURCE_DIR}")
+message(STATUS "current_bin_dir: ${CMAKE_CURRENT_BINARY_DIR}")
 install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/rust DESTINATION .)
 endif()
 
