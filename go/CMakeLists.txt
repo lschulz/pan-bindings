@@ -39,7 +39,7 @@ add_custom_command(
 
 install(FILES "${CGO_HEADER_OUT}" DESTINATION include/pan RENAME pan.h)
 install(FILES "${CMAKE_SOURCE_DIR}/include/pan/pan_cdefs.h" DESTINATION include/pan)
-install(FILES "${CMAKE_CURRENT_BINARY_DIR}/${STATIC_LIBRARY}" TYPE LIB)
+install(FILES "${CMAKE_CURRENT_BINARY_DIR}/${STATIC_LIBRARY}" TYPE LIB) #specify Destination here ?!
 
 add_library(pan_c STATIC IMPORTED GLOBAL)
 add_dependencies(pan_c pan)
@@ -61,3 +61,5 @@ add_custom_command(
 )
 install(FILES "${CMAKE_CURRENT_BINARY_DIR}/${SHARED_LIBRARY}" TYPE LIB RENAME "${SHARED_LIBRARY}")
 endif(${BUILD_SHARED_LIBS})
+
+message(status "Successfully build libpan.a" )
