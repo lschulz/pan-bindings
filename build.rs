@@ -43,7 +43,7 @@ fn main() {
 
     let mut cmake_cfg = Config::new(".");
 
-    cmake_cfg.define("CARGO_BUILD", "1");
+    cmake_cfg.define("CARGO_BUILD", "1").very_verbose(true);
     let dst = cmake_cfg.build();
 
     let out_dir = env::var("OUT_DIR").unwrap();
