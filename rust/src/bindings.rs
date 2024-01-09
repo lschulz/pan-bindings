@@ -985,7 +985,7 @@ extern "C" {
     ) -> PanError;
 }
 extern "C" {
-    pub fn GetLocalIA() -> GoUint64;
+    pub fn GetLocalIA(do_panic: GoUint8) -> GoUint64;
 }
 extern "C" {
     #[doc = "\\brief Wrapper for `(pan.Conn).WriteVia`\n\\param[in] conn Connection\n\\param[in] buffer Pointer to a buffer containing the message.\n\\param[in] len Length of the message in \\p buffer in bytes.\n\\param[in] path Path to take to the destination.\n\\param[out] n Number of bytes written. Can be NULL to ignore.\n\\return `PAN_ERR_OK` on success.\n`PAN_ERR_DEADLINE` if the deadline was exceeded.\n`PAN_ERR_FAILED` if the operation failed.\n\\ingroup conn"]

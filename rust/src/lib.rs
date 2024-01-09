@@ -1065,6 +1065,16 @@ impl GoHandleOwner for Endpoint {
         prt
     }
 }
+/// returns the local hosts IA (or None if it cant find the SCION deamon)
+pub fn get_local_IA() -> Option<u64> {
+    unsafe {
+        let ia = GetLocalIA(0);
+        match ia {
+            0 => None,
+            _ => { Some(ia) }
+        }
+    }
+}
 
 use std::error::Error;
 

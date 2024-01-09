@@ -2077,20 +2077,33 @@ func init() {
 
 }
 
+/* 
+returns IA of local host
+panics if scion deamon is not running
+*/
 //export GetLocalIA
-func GetLocalIA() uint64 {
+func GetLocalIA( do_panic bool) uint64 {
 
 	ctx, cancelF := context.WithTimeout(context.Background(), time.Second)
 	defer cancelF()
 	conn, err := service.Connect(ctx)
 	if err != nil {
+		if do_panic {
 		panic(fmt.Sprintf("connecting to SCION Daemon: %v", err))
+		} else 
+		{
+			return 0
+		}
 	}
 	defer conn.Close()
 
 	info, err := app.QueryASInfo(ctx, conn)
 	if err != nil {
+		if do_panic{
 		panic(fmt.Sprintf("%v", err))
+		} else {
+			return 0
+		}
 	}
 	return uint64(info.IA)
 
