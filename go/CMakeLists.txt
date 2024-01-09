@@ -27,7 +27,7 @@ add_custom_target(pan ALL DEPENDS ${STATIC_LIBRARY} ${INCLUDE_HEADER})
 add_custom_command(
     OUTPUT ${STATIC_LIBRARY} ${CGO_HEADER_OUT}
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-    COMMAND ${CMAKE_COMMAND} -E env CGO_ENABLED=1 ${GO_BINARY} build -buildmode=c-archive
+    COMMAND ${CMAKE_COMMAND} -E env CGO_ENABLED=1 ${GO_BINARY} build -buildmode=c-archive -ldflags "-linkmode 'external' -extldflags '-static'" -tags netgo
         -o "${CMAKE_CURRENT_BINARY_DIR}/${STATIC_LIBRARY}" ${SRC}
     DEPENDS ${SRC} pan
 )
