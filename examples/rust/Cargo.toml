@@ -43,4 +43,4 @@ env_logger= "0.10.1"
 log = "0.4.20"
 #futures-io = { version = "0.3.19", optional = true }
 futures = "0.3.29"
-scionnet ={version="0.0.6"}
+scionnet ={version="0.0.7"}
