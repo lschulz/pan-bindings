@@ -45,6 +45,7 @@ import (
 	"net"
 	"os"
 	"runtime/cgo"
+	"sync"
 	"time"
 	"unsafe"
 
@@ -1076,6 +1077,7 @@ type ListenSockAdapter struct {
 	unix_conn   *net.UnixConn
 	unix_remote *net.UnixAddr
 	listen_addr string
+	close_wg    sync.WaitGroup
 }
 
 func NewListenSockAdapter(
@@ -1103,6 +1105,7 @@ func NewListenSockAdapter(
 		listen_addr: listen_addr,
 	}
 
+	adapter.close_wg.Add(2)
 	go adapter.panToUnix()
 	go adapter.unixToPan()
 
@@ -1112,11 +1115,13 @@ func NewListenSockAdapter(
 func (ls *ListenSockAdapter) Close() error {
 	ls.pan_conn.Close()
 	ls.unix_conn.Close()
+	ls.close_wg.Wait()
 	os.Remove(ls.listen_addr)
 	return nil
 }
 
 func (ls *ListenSockAdapter) panToUnix() {
+	defer ls.close_wg.Done()
 	var buffer = make([]byte, 4096)
 	for {
 		// Read from network
@@ -1154,6 +1159,7 @@ func (ls *ListenSockAdapter) panToUnix() {
 }
 
 func (ls *ListenSockAdapter) unixToPan() {
+	defer ls.close_wg.Done()
 	var buffer = make([]byte, 4096)
 	for {
 		// Read from unix socket
@@ -1237,6 +1243,7 @@ type ConnSockAdapter struct {
 	unix_conn   *net.UnixConn
 	unix_remote *net.UnixAddr
 	listen_addr string
+	close_wg    sync.WaitGroup
 }
 
 func NewConnSockAdapter(
@@ -1264,6 +1271,7 @@ func NewConnSockAdapter(
 		listen_addr: listen_addr,
 	}
 
+	adapter.close_wg.Add(2)
 	go adapter.panToUnix()
 	go adapter.unixToPan()
 
@@ -1273,11 +1281,13 @@ func NewConnSockAdapter(
 func (cs *ConnSockAdapter) Close() error {
 	cs.pan_conn.Close()
 	cs.unix_conn.Close()
+	cs.close_wg.Wait()
 	os.Remove(cs.listen_addr)
 	return nil
 }
 
 func (cs *ConnSockAdapter) panToUnix() {
+	defer cs.close_wg.Done()
 	var buffer = make([]byte, 4096)
 	for {
 		// Read from network
@@ -1295,6 +1305,7 @@ func (cs *ConnSockAdapter) panToUnix() {
 }
 
 func (cs *ConnSockAdapter) unixToPan() {
+	defer cs.close_wg.Done()
 	var buffer = make([]byte, 4096)
 	for {
 		// Read from Unix domain socket
@@ -1368,6 +1379,7 @@ type ListenSSockAdapter struct {
 	pan_conn      pan.ListenConn
 	unix_listener *net.UnixListener
 	unix_conn     *net.UnixConn
+	close_wg      sync.WaitGroup
 }
 
 func NewListenSSockAdapter(
@@ -1391,18 +1403,22 @@ func NewListenSSockAdapter(
 		unix_conn:     nil,
 	}
 
+	adapter.close_wg.Add(1)
 	go adapter.waitForConn()
 
 	return adapter, nil
 }
 
 func (ls *ListenSSockAdapter) waitForConn() {
+	defer ls.close_wg.Done()
 	conn, err := ls.unix_listener.AcceptUnix()
 	defer ls.unix_listener.Close()
 	if err != nil {
 		return
 	}
 	ls.unix_conn = conn
+
+	ls.close_wg.Add(2)
 	go ls.panToUnix()
 	go ls.unixToPan()
 }
@@ -1410,10 +1426,12 @@ func (ls *ListenSSockAdapter) waitForConn() {
 func (ls *ListenSSockAdapter) Close() error {
 	ls.pan_conn.Close()
 	ls.unix_conn.Close()
+	ls.close_wg.Wait()
 	return nil
 }
 
 func (ls *ListenSSockAdapter) panToUnix() {
+	defer ls.close_wg.Done()
 	var buffer = make([]byte, 4096)
 	for {
 		// Read from network
@@ -1454,6 +1472,7 @@ func (ls *ListenSSockAdapter) panToUnix() {
 }
 
 func (ls *ListenSSockAdapter) unixToPan() {
+	defer ls.close_wg.Done()
 	var buffer = make([]byte, 4096)
 	for {
 		// Read from Unix domain socket
@@ -1548,6 +1567,7 @@ type ConnSSockAdapter struct {
 	pan_conn      pan.Conn
 	unix_listener *net.UnixListener
 	unix_conn     *net.UnixConn
+	close_wg      sync.WaitGroup
 }
 
 func NewConnSSockAdapter(
@@ -1571,18 +1591,22 @@ func NewConnSSockAdapter(
 		unix_conn:     nil,
 	}
 
+	adapter.close_wg.Add(1)
 	go adapter.waitForConn()
 
 	return adapter, nil
 }
 
 func (cs *ConnSSockAdapter) waitForConn() {
+	defer cs.close_wg.Done()
 	conn, err := cs.unix_listener.AcceptUnix()
 	defer cs.unix_listener.Close()
 	if err != nil {
 		return
 	}
 	cs.unix_conn = conn
+
+	cs.close_wg.Add(2)
 	go cs.panToUnix()
 	go cs.unixToPan()
 }
@@ -1590,10 +1614,12 @@ func (cs *ConnSSockAdapter) waitForConn() {
 func (cs *ConnSSockAdapter) Close() error {
 	cs.pan_conn.Close()
 	cs.unix_conn.Close()
+	cs.close_wg.Wait()
 	return nil
 }
 
 func (cs *ConnSSockAdapter) panToUnix() {
+	defer cs.close_wg.Done()
 	var buffer = make([]byte, 4096)
 	for {
 		// Read from network
@@ -1612,6 +1638,7 @@ func (cs *ConnSSockAdapter) panToUnix() {
 }
 
 func (cs *ConnSSockAdapter) unixToPan() {
+	defer cs.close_wg.Done()
 	var buffer = make([]byte, 4096)
 	for {
 		// Read from Unix domain socket
