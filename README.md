@@ -29,7 +29,7 @@ go install golang.org/dl/go1.20.11@latest
 # Go will usually install the new go binary in `~/go/bin/`. Add this directrory
 # to PATH or use the full path for the next command.
 go1.20.11 download
-# Run make with -D GO_BINARY=$(which go1.20.11)
+# Run cmake with -D GO_BINARY=$(which go1.20.11)
 ```
 
 Building the C++ bindings requires standalone (non-boost) Asio. The C++ examples
