@@ -398,7 +398,7 @@ func (s *CSelector) Refresh(paths []*pan.Path) {
 
 func (s *CSelector) PathDown(pf pan.PathFingerprint, pi pan.PathInterface) {
 	fingerprint := cgo.NewHandle(pf)
-	iface := cgo.NewHandle(pf)
+	iface := cgo.NewHandle(pi)
 	C.panCallSelectorPathDown(s.callbacks.pathDown,
 		(C.PanPathFingerprint)(fingerprint),
 		(C.PanPathInterface)(iface),
