@@ -4,9 +4,10 @@ project(pan-bindings)
 
 
 set(GO_BINARY "go" CACHE FILEPATH "Path to go binary")
-set(BUILD_CPP ON CACHE BOOL "Build the C++ bindings")
-set(BUILD_EXAMPLES ON CACHE BOOL "Build the examples")
-set(BUILD_SHARED_LIBS OFF CACHE BOOL "Build shared libraries")
+option(BUILD_CPP "Build the C++ bindings" ON)
+option(BUILD_EXAMPLES "Build the examples" ON)
+option(BUILD_STATIC_LIBS "Build shared libraries" OFF)
+option(BUILD_SHARED_LIBS "Build shared libraries" OFF)
 
 
 add_subdirectory(go)
