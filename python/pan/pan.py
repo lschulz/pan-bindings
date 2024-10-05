@@ -1,4 +1,4 @@
-# Copyright 2023 Lars-Christian Schulz
+# Copyright 2023-2024 Lars-Christian Schulz
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -16,7 +16,7 @@ import ipaddress
 from abc import ABC, abstractmethod
 from ctypes import *
 from ctypes.util import find_library
-from typing import Iterable, List, Tuple
+from typing import Any, Iterable, List, Tuple
 
 MAX_PACKET_SIZE = 2048
 
@@ -44,6 +44,7 @@ _ERR_DEADLINE = 2
 _ERR_NO_PATH = 3
 _ERR_ADDR_SYNTAX = 4
 _ERR_ADDR_RESOLUTION = 5
+_ERR_INVALID_ARG = 6
 
 class PanError(Exception):
     pass
@@ -63,6 +64,9 @@ class InvalidAddrSyntax(PanError):
 class AddrResolutionFailed(PanError):
     pass
 
+class InvalidArg(PanError):
+    pass
+
 def _raise_if_error(err):
     if err == _ERR_FAILED:
         raise OperationFailed("Requested operation failed")
@@ -74,6 +78,32 @@ def _raise_if_error(err):
         raise InvalidAddrSyntax("Invalid address syntax")
     elif err == _ERR_ADDR_RESOLUTION:
         raise AddrResolutionFailed("Address resolution failed")
+    elif err == _ERR_INVALID_ARG:
+        raise InvalidArg("Invalid argument")
+
+
+####################################
+# Handles for passing context data #
+####################################
+
+_handles = {}
+_next_handle = 1
+
+def register_handle(obj: Any) -> int:
+    global _handles
+    global _next_handle
+    _handles[_next_handle] = obj
+    h = _next_handle
+    _next_handle += 1
+    return h
+
+def free_handle(h: int):
+    global _handles
+    _handles.pop(h)
+
+def from_handle(h: int) -> Any:
+    global _handles
+    return _handles.get(h)
 
 
 ##################
@@ -83,7 +113,7 @@ def _raise_if_error(err):
 _PolicyFilterFn = CFUNCTYPE(c_void_p, POINTER(c_void_p), c_size_t, c_void_p)
 
 class _PathSelectorCB(Structure):
-    PathFn       = CFUNCTYPE(c_void_p, c_void_p)
+    PathFn       = CFUNCTYPE(c_uint64, c_void_p, c_void_p)
     InitializeFn = CFUNCTYPE(None, c_void_p, c_void_p, POINTER(c_void_p), c_size_t, c_void_p)
     RefreshFn    = CFUNCTYPE(None, POINTER(c_void_p), c_size_t, c_void_p)
     PathDownFn   = CFUNCTYPE(None, c_void_p, c_void_p, c_void_p)
@@ -97,7 +127,7 @@ class _PathSelectorCB(Structure):
     ]
 
 class _ReplySelectorCB(Structure):
-    PathFn       = CFUNCTYPE(c_void_p, c_void_p, c_void_p)
+    PathFn       = CFUNCTYPE(c_uint64, c_void_p, c_void_p, c_void_p)
     InitializeFn = CFUNCTYPE(None, c_void_p, c_void_p)
     RecordFn     = CFUNCTYPE(None, c_void_p, c_void_p, c_void_p)
     PathDownFn   = CFUNCTYPE(None, c_void_p, c_void_p, c_void_p)
@@ -127,6 +157,10 @@ _delete_handle = _libpan.PanDeleteHandle
 _delete_handle.argtypes = [c_void_p]
 _delete_handle.restype = None
 
+_get_last_error = _libpan.PanGetLastError
+_get_last_error.argtypes = []
+_get_last_error.restype = c_void_p
+
 _udp_addr_new = _libpan.PanUDPAddrNew
 _udp_addr_new.argtypes = [POINTER(c_uint64), POINTER(c_ubyte), c_int, c_uint16]
 _udp_addr_new.restype = c_void_p
@@ -155,6 +189,10 @@ _udp_addr_to_string = _libpan.PanUDPAddrToString
 _udp_addr_to_string.argtypes = [c_void_p]
 _udp_addr_to_string.restype = c_void_p
 
+_query_paths = _libpan.PanQueryPaths
+_query_paths.argtypes = [c_uint64, POINTER(POINTER(c_void_p)), POINTER(c_int)]
+_query_paths.restype = c_int
+
 _path_to_string = _libpan.PanPathToString
 _path_to_string.argtypes = [c_void_p]
 _path_to_string.restype = c_void_p
@@ -166,6 +204,18 @@ _path_get_fingerprint.restype = c_void_p
 _path_contains_interface = _libpan.PanPathContainsInterface
 _path_contains_interface.argtypes = [c_void_p]
 _path_contains_interface.restype = c_int
+
+_path_source = _libpan.PanPathSource
+_path_source.argtypes = [c_void_p]
+_path_source.restype = c_uint64
+
+_path_destination = _libpan.PanPathDestination
+_path_destination.argtypes = [c_void_p]
+_path_destination.restype = c_uint64
+
+_path_dp_length =_libpan.PanPathDpLength
+_path_dp_length.argtypes = [c_void_p]
+_path_dp_length.restype = c_int
 
 _path_fingerprint_are_equal = _libpan.PanPathFingerprintAreEqual
 _path_fingerprint_are_equal.argtypes = [c_void_p, c_void_p]
@@ -213,6 +263,9 @@ class OwningHandle:
     def handle(self) -> int:
         return self._handle
 
+    def __repr__(self):
+        return f"OwningHandle({self._handle})"
+
     def delete(self):
         if self._handle is not None:
             _delete_handle(self._handle)
@@ -240,11 +293,24 @@ class Handle:
     def handle(self) -> int:
         return self._handle
 
+    def __repr__(self):
+        return f"Handle({self._handle})"
+
     def delete(self):
         self._handle = None
 
     def copy(self) -> OwningHandle:
         return OwningHandle(_duplicate_handle(self._handle))
+
+
+def get_last_error() -> str:
+    cstr = _get_last_error()
+    if not cstr:
+        return ""
+    try:
+        return string_at(cstr).decode()
+    finally:
+        _free(cstr)
 
 
 class UDPAddress:
@@ -271,18 +337,16 @@ class UDPAddress:
         ptr = _udp_addr_to_string(self._handle)
         if not ptr:
             raise PanError("Converting UDPAddress to string failed")
-        result = string_at(ptr)
-        _free(ptr)
-        return result.decode()
+        try:
+            return string_at(ptr).decode()
+        finally:
+            _free(ptr)
 
-    def get_ia(self) -> Tuple[int, int]:
-        """Get the ISD, ASN pair."""
+    def get_ia(self) -> int:
+        """Get the ISD-ASN."""
         ia = c_uint64()
         _udp_addr_get_ia(self._handle, byref(ia))
-        buf = bytes(ia)
-        isd = int.from_bytes(buf[:2], byteorder='big')
-        asn = int.from_bytes(buf[2:], byteorder='big')
-        return (isd, asn)
+        return ia.value
 
     def get_ip(self) -> ipaddress.IPv4Address | ipaddress.IPv6Address:
         """Get the host IP address."""
@@ -346,9 +410,28 @@ class Path:
         ptr = _path_to_string(self._handle)
         if not ptr:
             raise PanError("Converting Path to string failed")
-        result = string_at(ptr)
-        _free(ptr)
-        return result.decode()
+        try:
+            return string_at(ptr).decode()
+        finally:
+            _free(ptr)
+
+    def __repr__(self):
+        return f"Path({self._handle})"
+
+    def source(self) -> int:
+        """Get the source ISD-ASN."""
+        return _path_source(self._handle)
+
+    def destination(self) -> int:
+        """Get the destination ISD-ASN."""
+        return _path_destination(self._handle)
+
+    def dp_length(self) -> int:
+        """Returns the length of the path in the data plane."""
+        length = _path_dp_length(self._handle)
+        if length < 0:
+            _raise_if_error(-length)
+        return length
 
     def __contains__(self, interface):
         if not isinstance(interface, PathInterface):
@@ -360,6 +443,20 @@ class Path:
 
     def fingerprint(self) -> PathFingerprint:
         return PathFingerprint(OwningHandle(_path_get_fingerprint(self._handle)))
+
+
+def query_paths(dst: int) -> List[Path]:
+    """Get paths to a given AS."""
+    paths = POINTER(c_void_p)()
+    n = c_int()
+    _raise_if_error(_query_paths(dst, byref(paths), byref(n)))
+    try:
+        result = []
+        for path in paths[:n.value]:
+            result.append(Path(OwningHandle(path)))
+        return result
+    finally:
+        _free(paths)
 
 
 class PathPolicy(ABC):
@@ -395,8 +492,8 @@ class PathPolicy(ABC):
 
 class PathSelector(ABC):
     def __init__(self):
-        def _path(user):
-            result = self.path()
+        def _path(ctx, user):
+            result = self.path(from_handle(ctx))
             if isinstance(result, Path):
                 handle = result._handle.handle
                 if isinstance(handle, int):
@@ -436,7 +533,7 @@ class PathSelector(ABC):
         self._handle.delete()
 
     @abstractmethod
-    def path(self) -> Path:
+    def path(self, ctx: Any) -> Path:
         pass
 
     @abstractmethod
@@ -458,8 +555,8 @@ class PathSelector(ABC):
 
 class ReplySelector(ABC):
     def __init__(self):
-        def _path(remote, user):
-            result = self.path(UDPAddress(OwningHandle(remote)))
+        def _path(ctx, remote, user):
+            result = self.path(from_handle(ctx), UDPAddress(OwningHandle(remote)))
             if isinstance(result, Path):
                 handle = result._handle.handle
                 if isinstance(handle, int):
@@ -498,7 +595,7 @@ class ReplySelector(ABC):
         self._handle.delete()
 
     @abstractmethod
-    def path(self, remote: UDPAddress) -> Path:
+    def path(self, ctx: Any, remote: UDPAddress) -> Path:
         pass
 
     @abstractmethod

@@ -1,4 +1,4 @@
-// Copyright 2023 Lars-Christian Schulz
+// Copyright 2023-2024 Lars-Christian Schulz
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -17,6 +17,12 @@
 #include <iostream>
 #include <iomanip>
 
+void insertCtxHeader(std::vector<char>& buffer, uint64_t ctx)
+{
+    auto size = buffer.size();
+    buffer.resize(size + sizeof(ctx));
+    std::memcpy(buffer.data() + size, &ctx, sizeof(ctx));
+}
 
 ScionUDPAddr parseProxyHeader(const char* buffer, size_t len)
 {

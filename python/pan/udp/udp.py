@@ -1,4 +1,4 @@
-# Copyright 2023 Lars-Christian Schulz
+# Copyright 2023-2024 Lars-Christian Schulz
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -13,7 +13,7 @@
 # limitations under the License.
 
 import socket
-from typing import Optional
+from typing import Any, Optional
 
 from ..pan import *
 from ..pan import (_ERR_ADDR_RESOLUTION, _ERR_ADDR_SYNTAX, _ERR_DEADLINE,
@@ -44,6 +44,10 @@ _listen_conn_read_from_via.restype = c_uint32
 _listen_conn_write_to = _libpan.PanListenConnWriteTo
 _listen_conn_write_to.argtypes = [c_void_p, c_void_p, c_int, c_void_p, POINTER(c_int)]
 _listen_conn_write_to.restype = c_uint32
+
+_listen_conn_write_to_with_ctx = _libpan.PanListenConnWriteToWithCtx
+_listen_conn_write_to_with_ctx.argtypes = [c_void_p, c_uint64, c_void_p, c_int, c_void_p, POINTER(c_int)]
+_listen_conn_write_to_with_ctx.restype = c_uint32
 
 _listen_conn_write_to_via = _libpan.PanListenConnWriteToVia
 _listen_conn_write_to_via.argtypes = [c_void_p, c_void_p, c_int, c_void_p, c_void_p, POINTER(c_int)]
@@ -84,6 +88,10 @@ _conn_read_via.restype = c_uint32
 _conn_write = _libpan.PanConnWrite
 _conn_write.argtypes = [c_void_p, c_void_p, c_int, POINTER(c_int)]
 _conn_write.restype = c_uint32
+
+_conn_write_with_ctx = _libpan.PanConnWriteWithCtx
+_conn_write_with_ctx.argtypes = [c_void_p, c_uint64, c_void_p, c_int, POINTER(c_int)]
+_conn_write_with_ctx.restype = c_uint32
 
 _conn_write_via = _libpan.PanConnWriteVia
 _conn_write_via.argtypes = [c_void_p, c_void_p, c_int, POINTER(c_void_p), POINTER(c_int)]
@@ -253,6 +261,27 @@ class ListenConn:
 
         return read.value
 
+    def write_to_with_ctx(self, ctx: Any, data: bytes|bytearray, to_addr: UDPAddress) -> int:
+        _raise_if_none(self._handle)
+        if isinstance(data, bytes):
+            data = bytearray(data)
+        buffer = (c_ubyte * len(data)).from_buffer(data)
+        read = c_int()
+
+        hCtx = register_handle(ctx)
+        try:
+            err = _listen_conn_write_to_with_ctx(self._handle, byref(ctx),
+                buffer, len(buffer), to_addr._handle, byref(read))
+        finally:
+            free_handle(ctx)
+
+        if err == _ERR_DEADLINE:
+            raise DeadlineExceeded("ListenConn.write_to deadline exceeded")
+        elif err != _ERR_OK:
+            _raise_if_error(err)
+
+        return read.value
+
     def write_to_via(self, data: bytes|bytearray, to_addr: UDPAddress, path: Path) -> int:
         _raise_if_none(self._handle)
         if isinstance(data, bytes):
@@ -394,6 +423,27 @@ class Conn:
         read = c_int()
 
         err = _conn_write(self._handle, buffer, len(buffer), byref(read))
+        if err == _ERR_DEADLINE:
+            raise DeadlineExceeded("ListenConn.write_to deadline exceeded")
+        elif err != _ERR_OK:
+            _raise_if_error(err)
+
+        return read.value
+
+    def write_with_ctx(self, ctx: Any, data: bytes|bytearray) -> int:
+        _raise_if_none(self._handle)
+        if isinstance(data, bytes):
+            data = bytearray(data)
+        buffer = (c_ubyte * len(data)).from_buffer(data)
+        read = c_int()
+
+        hCtx = register_handle(ctx)
+        try:
+            err = _conn_write_with_ctx(self._handle, hCtx, buffer, len(buffer), byref(read))
+        finally:
+            free_handle(hCtx)
+
+
         if err == _ERR_DEADLINE:
             raise DeadlineExceeded("ListenConn.write_to deadline exceeded")
         elif err != _ERR_OK:

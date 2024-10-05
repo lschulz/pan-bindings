@@ -84,7 +84,7 @@ if (${BUILD_SHARED_LIBS})
     set_target_properties(pan_shared PROPERTIES
         OUTPUT_NAME pan
         DEBUG_POSTFIX "d"
-        VERSION "1.0.1"
+        VERSION "1.1.0"
         SOVERSION "1"
     )
     if (WIN32)

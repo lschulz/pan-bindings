@@ -1,4 +1,4 @@
-// Copyright 2023 Lars-Christian Schulz
+// Copyright 2023-2024 Lars-Christian Schulz
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -20,6 +20,7 @@
 
 #include <stddef.h>
 #include <stdint.h>
+#include <stdlib.h>
 
 #define PAN_INVALID_HANDLE 0
 #define PAN_ERR_OK 0
@@ -28,12 +29,15 @@
 #define PAN_ERR_NO_PATH 3
 #define PAN_ERR_ADDR_SYNTAX 4
 #define PAN_ERR_ADDR_RESOLUTION 5
+#define PAN_ERR_INVALID_ARG 6
 
 typedef const void cvoid_t;
 typedef const char cchar_t;
 typedef const uint8_t cuint8_t;
 typedef const uint64_t cuint64_t;
+typedef uint64_t PanIA; // ISD-ASN
 typedef uint32_t PanError;
+typedef uint64_t PanContext;
 typedef uintptr_t PanUDPAddr;
 typedef uintptr_t PanConn;
 typedef uintptr_t PanListenConn;
@@ -47,6 +51,57 @@ typedef uintptr_t PanConnSockAdapter;
 typedef uintptr_t PanConnSSockAdapter;
 typedef uintptr_t PanListenSockAdapter;
 typedef uintptr_t PanListenSSockAdapter;
+
+///////////////////
+// Path Metadata //
+///////////////////
+
+enum PanMetaLinkType {
+	PanMetaLinkUnspecified = 0, ///< Link type not specified
+	PanMetaLinkDirect,          ///< Direct physical connection
+	PanMetaLinkMultiHop,        ///< Connected with local routing/switching
+	PanMetaLinkOpenNet,         ///< Connection overlayed over the public Internet
+	PanMetaLinkInternal = 255,  ///< AS internal link (SCION does not provide link type for internal links)
+};
+
+typedef uint64_t PanMetaInterface;
+
+struct PanMetaGeo {
+    float Latitude;
+    float Longitude;
+	char* Address;
+};
+
+struct PanMetaHop {
+    PanIA             IA;
+    PanMetaInterface  Ingress, Egress;
+    struct PanMetaGeo IngRouter, EgrRouter;
+    uint32_t          InternalHops;
+    char*             Notes;
+};
+
+struct PanMetaLink {
+	enum PanMetaLinkType Type;
+	uint64_t             Latency;
+	uint64_t             Bandwidth;
+};
+
+struct PanPathMeta {
+	size_t              HopCount;
+	struct PanMetaHop*  Hops;
+	size_t              LinkCount;
+	struct PanMetaLink* Links;
+};
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+void PanFreePathMeta(struct PanPathMeta* meta);
+
+#ifdef __cplusplus
+}
+#endif
 
 ////////////
 // Policy //
@@ -67,7 +122,7 @@ inline size_t panCallPolicyFilter(PanPolicyFilterFn f, PanPath* paths, size_t co
 // Selector //
 //////////////
 
-typedef PanPath (*PanSelectorPathFn)(uintptr_t user);
+typedef PanPath (*PanSelectorPathFn)(PanContext ctx, uintptr_t user);
 
 /// Handles must be deleted by callee.
 typedef void (*PanSelectorInitializeFn)(
@@ -90,9 +145,9 @@ struct PanSelectorCallbacks
 	PanSelectorClose        close;
 };
 
-inline uintptr_t panCallSelectorPath(PanSelectorPathFn f, uintptr_t user)
+inline uintptr_t panCallSelectorPath(PanSelectorPathFn f, PanContext ctx, uintptr_t user)
 {
-	return f(user);
+	return f(ctx, user);
 }
 
 inline void panCallSelectorInitialize(PanSelectorInitializeFn f,
@@ -123,7 +178,7 @@ inline void panCallSelectorClose(PanSelectorClose f, uintptr_t user)
 ///////////////////
 
 /// Handles must be deleted by callee.
-typedef PanPath (*PanReplySelPathFn)(PanUDPAddr remote, uintptr_t user);
+typedef PanPath (*PanReplySelPathFn)(PanContext ctx, PanUDPAddr remote, uintptr_t user);
 
 /// Handles must be deleted by callee.
 typedef void (*PanReplySelInitializeFn)(PanUDPAddr local, uintptr_t user);
@@ -145,9 +200,9 @@ struct PanReplySelCallbacks
 	PanReplySelCloseFn      close;
 };
 
-inline uintptr_t panCallReplySelPath(PanReplySelPathFn f, PanUDPAddr remote, uintptr_t user)
+inline uintptr_t panCallReplySelPath(PanReplySelPathFn f, PanContext ctx, PanUDPAddr remote, uintptr_t user)
 {
-	return f(remote, user);
+	return f(ctx, remote, user);
 }
 
 inline void panCallReplySelInitialize(PanReplySelInitializeFn f, PanUDPAddr local, uintptr_t user)

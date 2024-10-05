@@ -1,4 +1,4 @@
-// Copyright 2023 Lars-Christian Schulz
+// Copyright 2023-2024 Lars-Christian Schulz
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -44,7 +44,7 @@ public:
         fs::path goSocketPath = tmp / "scion_async_client_go.sock";
         fs::path socketPath = tmp / "scion_async_client.sock";
 
-        auto remote = Pan::udp::resolveUDPAddr(args.remoteAddr.c_str());
+        auto remote = Pan::udp::ResolveUDPAddr(args.remoteAddr.c_str());
         conn.dial(args.localAddr.empty() ? NULL : args.localAddr.c_str(), remote);
 
         socket.open();
@@ -53,7 +53,8 @@ public:
         adapter = conn.createSockAdapter(goSocketPath.c_str(), socketPath.c_str());
 
         if (args.message.empty()) args.message = {'H', 'e', 'l', 'l', 'o', '!'};
-        buffer.reserve(args.message.size());
+        buffer.reserve(args.message.size() + CTX_HEADER_LEN);
+        insertCtxHeader(buffer, 0);
         std::copy(args.message.cbegin(), args.message.cend(), std::back_inserter(buffer));
 
         socket.async_connect(

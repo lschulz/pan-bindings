@@ -1,4 +1,4 @@
-// Copyright 2023 Lars-Christian Schulz
+// Copyright 2023-2024 Lars-Christian Schulz
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -220,7 +220,7 @@ int runClient(Arguments& args)
     using namespace std::chrono_literals;
 
     std::error_code ec;
-    auto remote = Pan::udp::resolveUDPAddr(args.remoteAddr.c_str(), ec);
+    auto remote = Pan::udp::ResolveUDPAddr(args.remoteAddr.c_str(), ec);
     if (ec) {
         std::cout << "Address resolution error: " << ec.message() << '\n';
         return EXIT_FAILURE;
@@ -273,7 +273,8 @@ int main(int argc, char* argv[])
         }
     }
     catch (Pan::Exception &e) {
-        std::cout << "PAN error: " << e.what() << std::endl;
+        std::cout << "PAN error: " << e.what() << '\n';
+        std::cout << Pan::GetLastError() << std::endl;
         return EXIT_FAILURE;
     }
 }

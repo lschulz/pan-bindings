@@ -1,4 +1,4 @@
-// Copyright 2023 Lars-Christian Schulz
+// Copyright 2023-2024 Lars-Christian Schulz
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -26,30 +26,30 @@
 namespace Pan {
 
 /// \brief Wrapper for Cgo handles. Manages the lifetime of the contained handle.
-/// GoHandle cannot be copied, use duplicate() to create a new unique duplicate
-/// handle.
+/// \details GoHandle cannot be copied, use duplicate() to create a new unique
+/// duplicate handle.
 class GoHandle
 {
 public:
     static constexpr std::uintptr_t INVALID_HANDLE = 0;
 
     /// \brief Construct an invalid handle.
-    constexpr GoHandle() : handle() { }
+    constexpr GoHandle() noexcept : handle() { }
 
     /// \brief Take ownership of a handle.
-    constexpr explicit GoHandle(std::uintptr_t h)
+    constexpr explicit GoHandle(std::uintptr_t h) noexcept
         : handle(h)
     {}
 
     DLLEXPORT
-    GoHandle(const GoHandle &other);
+    GoHandle(const GoHandle &other) noexcept;
     GoHandle(GoHandle &&other) noexcept
     {
         swap(*this, other);
     }
 
     DLLEXPORT
-    GoHandle& operator=(const GoHandle &other);
+    GoHandle& operator=(const GoHandle &other) noexcept;
     GoHandle& operator=(GoHandle &&other) noexcept
     {
         swap(*this, other);
@@ -60,10 +60,10 @@ public:
 
     /// \brief Initialize with a duplicate of the given handle.
     DLLEXPORT
-    static GoHandle Duplicate(std::uintptr_t handle);
+    static GoHandle Duplicate(std::uintptr_t handle) noexcept;
 
     /// \brief Duplicate the contained handle.
-    GoHandle duplicate()
+    GoHandle duplicate() noexcept
     {
         return GoHandle::Duplicate(handle);
     }
@@ -109,7 +109,7 @@ public:
     }
 
     /// \brief Delete the owned handle and assign a new one.
-    void reset(std::uintptr_t newHandle)
+    void reset(std::uintptr_t newHandle) noexcept
     {
         reset();
         handle = newHandle;
@@ -117,7 +117,7 @@ public:
 
     /// \brief Delete the owned handle.
     DLLEXPORT
-    void reset();
+    void reset() noexcept;
 
     /// \brief Release ownership of the handle and return it.
     std::uintptr_t release() noexcept

@@ -18,12 +18,12 @@
 namespace Pan {
 
 DLLEXPORT
-GoHandle::GoHandle(const GoHandle &other)
+GoHandle::GoHandle(const GoHandle &other) noexcept
     : handle(PanDuplicateHandle(other.handle))
 {}
 
 DLLEXPORT
-GoHandle& GoHandle::operator=(const GoHandle &other)
+GoHandle& GoHandle::operator=(const GoHandle &other) noexcept
 {
     if (other != *this)
         handle = PanDuplicateHandle(other.handle);
@@ -31,13 +31,13 @@ GoHandle& GoHandle::operator=(const GoHandle &other)
 }
 
 DLLEXPORT
-GoHandle GoHandle::Duplicate(std::uintptr_t handle)
+GoHandle GoHandle::Duplicate(std::uintptr_t handle) noexcept
 {
     return GoHandle(PanDuplicateHandle(handle));
 }
 
 DLLEXPORT
-void GoHandle::reset()
+void GoHandle::reset() noexcept
 {
     if (handle != PAN_INVALID_HANDLE) {
         PanDeleteHandle(handle);

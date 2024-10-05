@@ -1,4 +1,4 @@
-// Copyright 2023 Lars-Christian Schulz
+// Copyright 2023-2024 Lars-Christian Schulz
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -21,7 +21,7 @@ using namespace Pan;
 // DefaultSelector //
 /////////////////////
 
-Path DefaultSelector::path()
+Path DefaultSelector::path(std::uint64_t ctx)
 {
     std::lock_guard<std::mutex> lock(mutex);
 

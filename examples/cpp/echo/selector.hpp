@@ -1,4 +1,4 @@
-// Copyright 2023 Lars-Christian Schulz
+// Copyright 2023-2024 Lars-Christian Schulz
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -27,7 +27,7 @@ public:
     DefaultSelector() = default;
 
 protected:
-    Pan::Path path() override;
+    Pan::Path path(std::uint64_t ctx) override;
     void initialize(
         Pan::udp::Endpoint local, Pan::udp::Endpoint remote,
         std::vector<Pan::Path>& paths) override;

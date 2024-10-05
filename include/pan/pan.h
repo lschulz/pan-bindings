@@ -24,6 +24,7 @@ typedef struct { const char *p; ptrdiff_t n; } _GoString_;
  #include "pan/pan_cdefs.h"
  #define PAN_STREAM_HDR_SIZE 4
  #define PAN_ADDR_HDR_SIZE 32
+ #define PAN_CTX_HDR_SIZE 8
  /** \file
 	* PAN C Wrapper
   * \defgroup handle Go Handles
@@ -112,6 +113,14 @@ extern uintptr_t PanDuplicateHandle(uintptr_t handle);
 */
 extern void PanDeleteHandle(uintptr_t handle);
 
+/*
+\brief Get a description of error returned from the last API call.
+\details Since Go doesn't have thread-local variables, this value is not
+reliable if Go/PAN is called from more than one thread. The returned string must
+be freed with free().
+*/
+extern char* PanGetLastError();
+
 /**
 \brief Wrapper for `pan.ResolveUDPAddr`
 	A handle to the resolved address is returned in `resolved`.
@@ -138,7 +147,7 @@ extern PanUDPAddr PanUDPAddrNew(cuint64_t* ia, cuint8_t* ip, int ip_len, uint16_
 	big-endian byte order. Function is a no-op if this is `NULL`.
 \ingroup addresses
 */
-extern void PanUDPAddrGetIA(PanUDPAddr addr, uint64_t* ia);
+extern void PanUDPAddrGetIA(PanUDPAddr addr, PanIA* ia);
 
 /**
 \brief Returns whether the IP-part of the address is IPv6 (including mapped IPv4
@@ -183,11 +192,43 @@ The returned string must be freed with free().
 extern char* PanUDPAddrToString(PanUDPAddr addr);
 
 /**
+\brief Query paths to a particular destination AS.
+\param[in] dst Destination ISD-ASN
+\param[out] paths Pointer to an array of path handles. The path handles must be
+	released using PanDeleteHandle() and the array itself freed with free().
+\param[out] n The length of the returned array. Must not be NULL.
+\return `PAN_ERR_OK` on success.
+	`PAN_ERR_INVALID_ARG` if `paths` or `n` is NULL.
+	`PAN_ERR_FAILED` if the path lookup failed.
+\ingroup path
+*/
+extern PanError PanQueryPaths(PanIA dst, PanPath** paths, int* n);
+
+/**
 \brief Return a string representing the path.
 The returned string must be freed with free().
 \ingroup path
 */
 extern char* PanPathToString(PanPath path);
+
+/**
+\brief Get the paths's source AS as ISD-ASN.
+\ingroup path
+*/
+extern PanIA PanPathSource(PanPath path);
+
+/**
+\brief Get the paths's destination AS as ISD-ASN.
+\ingroup path
+*/
+extern PanIA PanPathDestination(PanPath path);
+
+/**
+\brief Returns the legnth of the path in the data plane.
+\return A negative return value indicates an error.
+\ingroup path
+*/
+extern int PanPathDpLength(PanPath path);
 
 /**
 \brief Get the fingerprint of the path.
@@ -200,6 +241,13 @@ extern PanPathFingerprint PanPathGetFingerprint(PanPath path);
 \ingroup path
 */
 extern int PanPathContainsInterface(PanPath path, PanPathInterface iface);
+
+/**
+\brief Get the path's metadata. The returned struct must be freed with
+PanFreePathMeta().
+\ingroup path
+*/
+extern struct PanPathMeta* PanPathMetadata(PanPath path);
 
 /**
 \brief Check whether two path fingerprints compare equal.
@@ -289,6 +337,22 @@ extern PanError PanListenConnReadFromVia(PanListenConn conn, void* buffer, int l
 \ingroup listen_conn
 */
 extern PanError PanListenConnWriteTo(PanListenConn conn, cvoid_t* buffer, int len, PanUDPAddr to, int* n);
+
+/**
+\briefWrapper for `(pan.ListenConn).WriteToWithCtx`
+\param[in] conn Listening connection.
+\param[in] ctx is passed to the path selector.
+\param[in] buffer Pointer to a buffer containing the message.
+\param[in] len Length of the message in \p buffer in bytes.
+\param[in] to Destination address.
+\param[out] n Number of bytes written. Can be NULL to ignore.
+\return `PAN_ERR_OK` on success.
+	`PAN_ERR_DEADLINE` if the deadline was exceeded.
+	`PAN_ERR_NO_PATH` if no path to the destination is known.
+	`PAN_ERR_FAILED` if the operation failed in some other way.
+\ingroup listen_conn
+*/
+extern PanError PanListenConnWriteToWithCtx(PanListenConn conn, PanContext ctx, cvoid_t* buffer, int len, PanUDPAddr to, int* n);
 
 /**
 \brief Wrapper for `(pan.ListenConn).WriteToVia`
@@ -402,6 +466,21 @@ extern PanError PanConnReadVia(PanConn conn, void* buffer, int len, PanPath* pat
 extern PanError PanConnWrite(PanListenConn conn, cvoid_t* buffer, int len, int* n);
 
 /**
+\brief Wrapper for `(pan.Conn).WriteWithCtx`
+\param[in] conn Connection
+\param[in] ctx is passed to the path selector.
+\param[in] buffer Pointer to a buffer containing the message.
+\param[in] len Length of the message in \p buffer in bytes.
+\param[out] n Number of bytes written. Can be NULL to ignore.
+\return `PAN_ERR_OK` on success.
+	`PAN_ERR_DEADLINE` if the deadline was exceeded.
+	`PAN_ERR_NO_PATH` if no path to the destination is known.
+	`PAN_ERR_FAILED` if the operation failed in some other way.
+\ingroup conn
+*/
+extern PanError PanConnWriteWithCtx(PanListenConn conn, PanContext ctx, cvoid_t* buffer, int len, int* n);
+
+/**
 \brief Wrapper for `(pan.Conn).WriteVia`
 \param[in] conn Connection
 \param[in] buffer Pointer to a buffer containing the message.
@@ -461,23 +540,27 @@ extern PanError PanConnClose(PanConn conn);
 /**
 \brief Open a Unix datagram socket at `listen_addr` as proxy for `pan_conn`.
 
-All packets received by `pan_conn` are forwarded from `listen_addr` to `client_addr`.
-All packets received from the Unix socket are forwarded to `pan_conn`.
-The SCION address of the source or destination is prepended to the payload in a
-32 byte header:
+All packets received by `pan_conn` are forwarded from `listen_addr` to
+`client_addr`. All packets received from the Unix socket are forwarded to
+`pan_conn`. The SCION address of the source or destination is prepended to the
+payload in a 32 byte header. An additional 8 byte are added to the header when
+sending packets (received packets do not contain this field) that are
+interpreted as pointer that is passed as context to the path selector.
 \verbatim
 byte 0       1       2       3       4       5       6       7
      +-------+-------+-------+-------+-------+-------+-------+-------+
    0 |    ISD (BE)   |                     ASN (BE)                  |
      +-------+-------+-------+-------+-------+-------+-------+-------+
-   8 |    Host Addr. Length (LE)     |                               |
+   8 |    Host Addr. Length (NE)     |                               |
      +-------+-------+-------+-------+                               |
   16 |                         Host Address (BE)                     |
      +                               +-------+-------+-------+-------+
-  24 |                               | UDP Port (LE) |       0       |
+  24 |                               | UDP Port (NE) |       0       |
      +-------+-------+-------+-------+-------+-------+-------+-------+
+  32 |                    Path Selector Context (NE)                 |
+	 +-------+-------+-------+-------+-------+-------+-------+-------+
 BE = big-endian
-LE = little-endian
+NE = native-endian
 \endverbatim
 
 \param[in] pan_conn Listening PAN connection.
@@ -521,7 +604,7 @@ extern PanError PanConnSockAdapterClose(PanConnSockAdapter adapter);
 
 Behaves identical to `PanNewListenSockAdapter` except that a stream socket is
 used instead of a datagram socket. Packet borders in the stream are determined
-by prepending a four byte message length (little endian) in front of every
+by prepending a four byte message length (native endian) in front of every
 packet sent or received on the Unix socket.
 
 When initially created, the socket will listens for and accept exactly one
@@ -550,7 +633,7 @@ extern PanError PanListenSSockAdapterClose(PanListenSSockAdapter adapter);
 
 Behaves identical to `PanNewConnSockAdapter` except that a stream socket is
 used instead of a datagram socket. Packet borders in the stream are determined
-by prepending a four byte message length (little endian) in front of every
+by prepending a four byte message length (native endian) in front of every
 packet sent or received on the Unix socket.
 
 When initially created, the socket will listens for and accept exactly one

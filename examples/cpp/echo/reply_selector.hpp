@@ -1,4 +1,4 @@
-// Copyright 2023 Lars-Christian Schulz
+// Copyright 2023-2024 Lars-Christian Schulz
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -28,7 +28,7 @@ public:
     DefaultReplySelector() = default;
 
 protected:
-    Pan::Path path(Pan::udp::Endpoint remote) override;
+    Pan::Path path(std::uint64_t ctx, Pan::udp::Endpoint remote) override;
     void initialize(Pan::udp::Endpoint local) override;
     void record(Pan::udp::Endpoint remote, Pan::Path path) override;
     void pathDown(Pan::PathFingerprint pf, Pan::PathInterface pi) override;

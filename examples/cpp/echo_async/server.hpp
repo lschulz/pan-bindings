@@ -1,4 +1,4 @@
-// Copyright 2023 Lars-Christian Schulz
+// Copyright 2023-2024 Lars-Christian Schulz
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -95,7 +95,10 @@ private:
             size_t dataLen = bytes - PROXY_HEADER_LEN;
             std::cout << "Received " << dataLen << " bytes from " << from << ":\n";
             printBuffer(std::cout, buffer.data() + PROXY_HEADER_LEN, dataLen) << "\n";
-            socket.async_send(asio::buffer(buffer, bytes), std::bind(&Server::sent, this, _1, _2));
+            buffer.insert(buffer.begin() + PROXY_HEADER_LEN, CTX_HEADER_LEN, 0);
+            socket.async_send(
+                asio::buffer(buffer, bytes + CTX_HEADER_LEN),
+                std::bind(&Server::sent, this, _1, _2));
         }
         catch (const std::exception& e) {
             std::cerr << "Received invalid packet on unix socket: " << e.what() << std::endl;

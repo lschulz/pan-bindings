@@ -1,4 +1,4 @@
-// Copyright 2023 Lars-Christian Schulz
+// Copyright 2023-2024 Lars-Christian Schulz
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -20,6 +20,7 @@
 
 using std::uint8_t;
 using std::uint32_t;
+using std::uint64_t;
 using std::size_t;
 using std::uintptr_t;
 
@@ -41,40 +42,54 @@ struct PanErrorCategory : public std::error_category
         switch (static_cast<Error>(errorCode))
         {
         case Error::Ok:
-            return "No error";
+            return "no error";
         case Error::Failed:
-            return "Operation failed";
+            return "operation failed";
         case Error::Deadline:
-            return "Deadline exceeded";
+            return "deadline exceeded";
         case Error::NoPath:
-            return "No path to destination is known";
+            return "no path to destination is known";
         case Error::AddrSyntax:
-            return "Invalid address syntax";
+            return "invalid address syntax";
         case Error::AddrResolution:
-            return "Address resolution failed";
+            return "address resolution failed";
+        case Error::InvalidArg:
+            return "invalid argument";
         default:
-            return "Invalid error code";
+            return "invalid error code";
         }
     }
 };
+
+inline std::string makeString(const char* str)
+{
+    if (str) return std::string(str);
+    return std::string();
+}
 
 } // anonymous namespace
 
 /// \brief The one and only instance of PanErrorCategory
 PanErrorCategory panErrorCategory;
 
-
 namespace Pan {
 
-static std::error_code make_error_code(PanError e)
+DLLEXPORT
+std::error_code make_error_code(Error e)
 {
     return { static_cast<int>(e), panErrorCategory };
 }
 
-Exception::Exception(std::uint32_t error)
-    : ec(make_error_code(error))
+Exception::Exception(Error error)
+    : ec(error)
     , message(std::make_shared<std::string>(ec.message()))
 {}
+
+DLLEXPORT
+std::string GetLastError()
+{
+    return CString(PanGetLastError()).get();
+}
 
 /////////////////////
 // PathFingerprint //
@@ -109,6 +124,37 @@ std::string Path::toString() const
 }
 
 DLLEXPORT
+IA Path::getSource() const
+{
+    return PanPathSource(h.get());
+}
+
+DLLEXPORT
+IA Path::getDestination() const
+{
+    return PanPathDestination(h.get());
+}
+
+DLLEXPORT
+std::size_t Path::dpLength() const
+{
+    int len = PanPathDpLength(h.get());
+    if (len < 0) throw Exception(Error(-len));
+    return len;
+}
+
+DLLEXPORT
+std::size_t Path::dpLength(std::error_code& ec) const noexcept
+{
+    int len = PanPathDpLength(h.get());
+    if (len < 0) {
+        ec = Error(-len);
+        return 0;
+    }
+    return len;
+}
+
+DLLEXPORT
 PathFingerprint Path::getFingerprint() const
 {
     return PathFingerprint(GoHandle(PanPathGetFingerprint(h.get())));
@@ -118,6 +164,82 @@ DLLEXPORT
 bool Path::containsInterface(const PathInterface &iface) const
 {
     return PanPathContainsInterface(h.get(), iface.getHandle());
+}
+
+DLLEXPORT
+std::optional<PathMeta> Path::getMetadata() const
+{
+    std::unique_ptr<PanPathMeta, decltype(&PanFreePathMeta)>
+        pm(PanPathMetadata(h.get()), &PanFreePathMeta);
+    if (!pm) return std::nullopt;
+
+    PathMeta meta;
+    meta.hops.reserve(pm->HopCount);
+    for (size_t i = 0; i < pm->HopCount; ++i) {
+        auto& hop = pm->Hops[i];
+        meta.hops.push_back(PathHop{
+            .ia = hop.IA,
+            .ingress = hop.Ingress,
+            .egress = hop.Egress,
+            .ingRouter = GeoCoordinates{
+                .latitude = hop.IngRouter.Latitude,
+                .longitude = hop.IngRouter.Longitude,
+                .address = makeString(hop.IngRouter.Address),
+            },
+            .egrRouter = GeoCoordinates{
+                .latitude = hop.EgrRouter.Latitude,
+                .longitude = hop.EgrRouter.Longitude,
+                .address = makeString(hop.EgrRouter.Address),
+            },
+            .internalHops = hop.InternalHops,
+            .notes = makeString(hop.Notes),
+        });
+    }
+    meta.links.reserve(pm->LinkCount);
+    for (size_t i = 0; i < pm->LinkCount; ++i) {
+        auto& link = pm->Links[i];
+        meta.links.push_back(PathLink{
+            .type = LinkType(link.Type),
+            .latency = std::chrono::nanoseconds(link.Latency),
+            .bandwidth = link.Bandwidth,
+        });
+    }
+    return meta;
+}
+
+DLLEXPORT
+std::vector<Path> QueryPaths(IA dst)
+{
+    std::error_code ec;
+    auto paths = QueryPaths(dst, ec);
+    if (ec) throw Exception(Error(ec.value()));
+    return paths;
+}
+
+DLLEXPORT
+std::vector<Path> QueryPaths(IA dst, std::error_code& ec) noexcept
+{
+    std::vector<Path> paths;
+    PanPath *ptr = NULL;
+    int n = 0;
+    ec = Error(PanQueryPaths(dst, &ptr, &n));
+    if (ec) return paths;
+    auto deleter = [=](PanPath* ptr){
+        if (ptr) {
+            for (int i = 0; i < n; ++i) {
+                if (ptr[i]) PanDeleteHandle(ptr[i]);
+            }
+            free(ptr);
+        }
+    };
+    std::unique_ptr<PanPath, decltype(deleter)> defer(ptr, deleter);
+
+    paths.reserve(n);
+    for (int i = 0; i < n; ++i) {
+        paths.emplace_back(GoHandle(ptr[i]));
+        ptr[i] = PAN_INVALID_HANDLE;
+    }
+    return paths;
 }
 
 ////////////////
@@ -166,10 +288,10 @@ PathSelector::PathSelector()
     h.reset(PanNewCSelector(&callbacks, reinterpret_cast<uintptr_t>(this)));
 }
 
-PanPath PathSelector::cbPath(uintptr_t user)
+PanPath PathSelector::cbPath(uint64_t ctx, uintptr_t user)
 {
     auto self = reinterpret_cast<PathSelector*>(user);
-    return self->path().releaseHandle();
+    return self->path(ctx).releaseHandle();
 }
 
 void PathSelector::cbInitialize(
@@ -229,10 +351,10 @@ ReplySelector::ReplySelector()
     h.reset(PanNewCReplySelector(&callbacks, reinterpret_cast<uintptr_t>(this)));
 }
 
-PanPath ReplySelector::cbPath(uintptr_t remote, uintptr_t user)
+PanPath ReplySelector::cbPath(uint64_t ctx, uintptr_t remote, uintptr_t user)
 {
     auto self = reinterpret_cast<ReplySelector*>(user);
-    return self->path(udp::Endpoint(GoHandle(remote))).releaseHandle();
+    return self->path(ctx, udp::Endpoint(GoHandle(remote))).releaseHandle();
 }
 
 void ReplySelector::cbInitialize(uintptr_t local, uintptr_t user)
@@ -271,20 +393,19 @@ namespace udp {
 //////////////
 
 DLLEXPORT
-Endpoint resolveUDPAddr(const char* address)
+Endpoint ResolveUDPAddr(const char* address)
 {
     GoHandle h;
     PanError err = PanResolveUDPAddr(address, h.resetAndGetAddressOf());
-    if (err) throw Exception(err);
+    if (err) throw Exception(Error(err));
     return Endpoint(std::move(h));
 }
 
 DLLEXPORT
-Endpoint resolveUDPAddr(const char* address, std::error_code &ec) noexcept
+Endpoint ResolveUDPAddr(const char* address, std::error_code &ec) noexcept
 {
     GoHandle h;
-    PanError err = PanResolveUDPAddr(address, h.resetAndGetAddressOf());
-    ec = make_error_code(err);
+    ec = Error(PanResolveUDPAddr(address, h.resetAndGetAddressOf()));
     return Endpoint(std::move(h));
 }
 
@@ -405,16 +526,15 @@ void ListenConn::listen(const char *bind)
     PanError err = PanListenUDP(bind,
         selector ? selector->getHandle() : PAN_INVALID_HANDLE,
         h.resetAndGetAddressOf());
-    if (err) throw Exception(err);
+    if (err) throw Exception(Error(err));
 }
 
 DLLEXPORT
 void ListenConn::listen(const char *bind, std::error_code &ec) noexcept
 {
-    PanError err = PanListenUDP(bind,
+    ec = Error(PanListenUDP(bind,
         selector ? selector->getHandle() : PAN_INVALID_HANDLE,
-        h.resetAndGetAddressOf());
-    ec = make_error_code(err);
+        h.resetAndGetAddressOf()));
 }
 
 DLLEXPORT
@@ -458,7 +578,7 @@ std::size_t ListenConn::readFrom(asio::mutable_buffer buffer, Endpoint *from)
     PanError err = PanListenConnReadFrom(h.get(), buffer.data(), buffer.size(),
         hfrom.resetAndGetAddressOf(), &n);
 
-    if (err) throw Exception(err);
+    if (err) throw Exception(Error(err));
 
     if (from) *from = Endpoint(std::move(hfrom));
     return static_cast<size_t>(n);
@@ -470,11 +590,9 @@ std::size_t ListenConn::readFrom(
 {
     GoHandle hfrom;
     int n = 0;
-    PanError err = PanListenConnReadFrom(h.get(), buffer.data(), buffer.size(),
-        hfrom.resetAndGetAddressOf(), &n);
-
-    ec = make_error_code(err);
-    if (err) return 0;
+    ec = Error(PanListenConnReadFrom(h.get(), buffer.data(), buffer.size(),
+        hfrom.resetAndGetAddressOf(), &n));
+    if (ec) return 0;
 
     if (from) *from = Endpoint(std::move(hfrom));
     return static_cast<size_t>(n);
@@ -489,7 +607,7 @@ std::size_t ListenConn::readFromVia(
     PanError err = PanListenConnReadFromVia(h.get(), buffer.data(), buffer.size(),
         hfrom.resetAndGetAddressOf(), hpath.resetAndGetAddressOf(), &n);
 
-    if (err) throw Exception(err);
+    if (err) throw Exception(Error(err));
 
     if (from) *from = Endpoint(std::move(hfrom));
     if (path) *path = Path(std::move(hpath));
@@ -502,11 +620,9 @@ std::size_t ListenConn::readFromVia(
 {
     GoHandle hfrom, hpath;
     int n = 0;
-    PanError err = PanListenConnReadFromVia(h.get(), buffer.data(), buffer.size(),
-        hfrom.resetAndGetAddressOf(), hpath.resetAndGetAddressOf(), &n);
-
-    ec = make_error_code(err);
-    if (err) return 0;
+    ec = Error(PanListenConnReadFromVia(h.get(), buffer.data(), buffer.size(),
+        hfrom.resetAndGetAddressOf(), hpath.resetAndGetAddressOf(), &n));
+    if (ec) return 0;
 
     if (from) *from = Endpoint(std::move(hfrom));
     if (path) *path = Path(std::move(hpath));
@@ -518,7 +634,7 @@ std::size_t ListenConn::writeTo(asio::const_buffer buffer, const Endpoint &to)
 {
     int n = 0;
     PanError err = PanListenConnWriteTo(h.get(), buffer.data(), buffer.size(), to.getHandle(), &n);
-    if (err) throw Exception(err);
+    if (err) throw Exception(Error(err));
     return static_cast<size_t>(n);
 }
 
@@ -527,9 +643,27 @@ std::size_t ListenConn::writeTo(
     asio::const_buffer buffer, const Endpoint &to, std::error_code &ec) noexcept
 {
     int n = 0;
-    PanError err = PanListenConnWriteTo(h.get(), buffer.data(), buffer.size(), to.getHandle(), &n);
-    ec = make_error_code(err);
-    if (err) return 0;
+    ec = Error(PanListenConnWriteTo(h.get(), buffer.data(), buffer.size(), to.getHandle(), &n));
+    if (ec) return 0;
+    return static_cast<size_t>(n);
+}
+
+DLLEXPORT
+std::size_t ListenConn::writeToWithCtx(uint64_t ctx, asio::const_buffer buffer, const Endpoint &to)
+{
+    int n = 0;
+    PanError err = PanListenConnWriteToWithCtx(h.get(), ctx, buffer.data(), buffer.size(), to.getHandle(), &n);
+    if (err) throw Exception(Error(err));
+    return static_cast<size_t>(n);
+}
+
+DLLEXPORT
+std::size_t ListenConn::writeToWithCtx(
+    uint64_t ctx, asio::const_buffer buffer, const Endpoint &to, std::error_code &ec) noexcept
+{
+    int n = 0;
+    ec = Error(PanListenConnWriteToWithCtx(h.get(), ctx, buffer.data(), buffer.size(), to.getHandle(), &n));
+    if (ec) return 0;
     return static_cast<size_t>(n);
 }
 
@@ -540,7 +674,7 @@ std::size_t ListenConn::writeToVia(
     int n = 0;
     PanError err = PanListenConnWriteToVia(
         h.get(), buffer.data(), buffer.size(), to.getHandle(), path.getHandle(), &n);
-    if (err) throw Exception(err);
+    if (err) throw Exception(Error(err));
     return static_cast<size_t>(n);
 }
 
@@ -549,10 +683,9 @@ std::size_t ListenConn::writeToVia(
     asio::const_buffer buffer, const Endpoint &to, const Path &path, std::error_code &ec) noexcept
 {
     int n = 0;
-    PanError err = PanListenConnWriteToVia(
-        h.get(), buffer.data(), buffer.size(), to.getHandle(), path.getHandle(), &n);
-    ec = make_error_code(err);
-    if (err) return 0;
+    ec = Error(PanListenConnWriteToVia(
+        h.get(), buffer.data(), buffer.size(), to.getHandle(), path.getHandle(), &n));
+    if (ec) return 0;
     return static_cast<size_t>(n);
 }
 
@@ -563,7 +696,7 @@ ListenSockAdapter ListenConn::createSockAdapter(const char* goSocketPath, const 
     GoHandle handle;
     PanError err = PanNewListenSockAdapter(
         h.get(), goSocketPath, cSocketPath, handle.resetAndGetAddressOf());
-    if (err) throw Exception(err);
+    if (err) throw Exception(Error(err));
     return ListenSockAdapter(std::move(handle));
 }
 
@@ -572,9 +705,8 @@ ListenSockAdapter ListenConn::createSockAdapter(
     const char* goSocketPath, const char* cSocketPath, std::error_code &ec) noexcept
 {
     GoHandle handle;
-    PanError err = PanNewListenSockAdapter(
-        h.get(), goSocketPath, cSocketPath, handle.resetAndGetAddressOf());
-    ec = make_error_code(err);
+    ec = Error(PanNewListenSockAdapter(
+        h.get(), goSocketPath, cSocketPath, handle.resetAndGetAddressOf()));
     return ListenSockAdapter(std::move(handle));
 }
 #endif // UNIX_DGRAM_AVAILABLE
@@ -586,7 +718,7 @@ ListenSSockAdapter ListenConn::createSSockAdapter(const char* goSocketPath)
     GoHandle handle;
     PanError err = PanNewListenSSockAdapter(
         h.get(), goSocketPath, handle.resetAndGetAddressOf());
-    if (err) throw Exception(err);
+    if (err) throw Exception(Error(err));
     return ListenSSockAdapter(std::move(handle));
 }
 
@@ -595,9 +727,8 @@ ListenSSockAdapter ListenConn::createSSockAdapter(
     const char* goSocketPath, std::error_code &ec) noexcept
 {
     GoHandle handle;
-    PanError err = PanNewListenSSockAdapter(
-        h.get(), goSocketPath, handle.resetAndGetAddressOf());
-    ec = make_error_code(err);
+    ec = Error(PanNewListenSSockAdapter(
+        h.get(), goSocketPath, handle.resetAndGetAddressOf()));
     return ListenSSockAdapter(std::move(handle));
 }
 #endif // UNIX_STREAM_AVAILABLE
@@ -676,17 +807,16 @@ void Conn::dial(const char *local, const Endpoint &remote)
         policy ? policy->getHandle() : PAN_INVALID_HANDLE,
         selector ? selector->getHandle() : PAN_INVALID_HANDLE,
         h.resetAndGetAddressOf());
-    if (err) throw Exception(err);
+    if (err) throw Exception(Error(err));
 }
 
 DLLEXPORT
 void Conn::dial(const char *local, const Endpoint &remote, std::error_code &ec) noexcept
 {
-    PanError err = PanDialUDP(local, remote.getHandle(),
+    ec = Error(PanDialUDP(local, remote.getHandle(),
         policy ? policy->getHandle() : PAN_INVALID_HANDLE,
         selector ? selector->getHandle() : PAN_INVALID_HANDLE,
-        h.resetAndGetAddressOf());
-    ec = make_error_code(err);
+        h.resetAndGetAddressOf()));
 }
 
 DLLEXPORT
@@ -733,7 +863,7 @@ std::size_t Conn::read(asio::mutable_buffer buffer)
 {
     int n = 0;
     PanError err = PanConnRead(h.get(), buffer.data(), buffer.size(), &n);
-    if (err) throw Exception(err);
+    if (err) throw Exception(Error(err));
     return static_cast<size_t>(n);
 }
 
@@ -741,8 +871,7 @@ DLLEXPORT
 std::size_t Conn::read(asio::mutable_buffer buffer, std::error_code &ec) noexcept
 {
     int n = 0;
-    PanError err = PanConnRead(h.get(), buffer.data(), buffer.size(), &n);
-    ec = make_error_code(err);
+    ec = Error(PanConnRead(h.get(), buffer.data(), buffer.size(), &n));
     return static_cast<size_t>(n);
 }
 
@@ -754,7 +883,7 @@ std::size_t Conn::readVia(asio::mutable_buffer buffer, Path *path)
     PanError err = PanConnReadVia(h.get(), buffer.data(), buffer.size(),
         hpath.resetAndGetAddressOf(), &n);
 
-    if (err) throw Exception(err);
+    if (err) throw Exception(Error(err));
 
     if (path) *path = Path(std::move(hpath));
     return static_cast<size_t>(n);
@@ -766,10 +895,8 @@ std::size_t Conn::readVia(
 {
     GoHandle hpath;
     int n = 0;
-    PanError err = PanConnReadVia(h.get(), buffer.data(), buffer.size(),
-        hpath.resetAndGetAddressOf(), &n);
-
-    ec = make_error_code(err);
+    ec = Error(PanConnReadVia(h.get(), buffer.data(), buffer.size(),
+        hpath.resetAndGetAddressOf(), &n));
 
     if (path) *path = Path(std::move(hpath));
     return static_cast<size_t>(n);
@@ -780,7 +907,7 @@ std::size_t Conn::write(asio::const_buffer buffer)
 {
     int n = 0;
     PanError err = PanConnWrite(h.get(), buffer.data(), buffer.size(), &n);
-    if (err) throw Exception(err);
+    if (err) throw Exception(Error(err));
     return static_cast<size_t>(n);
 }
 
@@ -788,8 +915,24 @@ DLLEXPORT
 std::size_t Conn::write(asio::const_buffer buffer, std::error_code &ec) noexcept
 {
     int n = 0;
-    PanError err = PanConnWrite(h.get(), buffer.data(), buffer.size(), &n);
-    ec = make_error_code(err);
+    ec = Error(PanConnWrite(h.get(), buffer.data(), buffer.size(), &n));
+    return static_cast<size_t>(n);
+}
+
+DLLEXPORT
+std::size_t Conn::writeWithCtx(uint64_t ctx, asio::const_buffer buffer)
+{
+    int n = 0;
+    PanError err = PanConnWriteWithCtx(h.get(), ctx, buffer.data(), buffer.size(), &n);
+    if (err) throw Exception(Error(err));
+    return static_cast<size_t>(n);
+}
+
+DLLEXPORT
+std::size_t Conn::writeWithCtx(uint64_t ctx, asio::const_buffer buffer, std::error_code &ec) noexcept
+{
+    int n = 0;
+    ec = Error(PanConnWriteWithCtx(h.get(), ctx, buffer.data(), buffer.size(), &n));
     return static_cast<size_t>(n);
 }
 
@@ -799,7 +942,7 @@ std::size_t Conn::writeVia(asio::const_buffer buffer, const Path &path)
     int n = 0;
     PanError err = PanConnWriteVia(
         h.get(), buffer.data(), buffer.size(), path.getHandle(), &n);
-    if (err) throw Exception(err);
+    if (err) throw Exception(Error(err));
     return static_cast<size_t>(n);
 }
 
@@ -808,9 +951,8 @@ std::size_t Conn::writeVia(
     asio::const_buffer buffer, const Path &path, std::error_code &ec) noexcept
 {
     int n = 0;
-    PanError err = PanConnWriteVia(
-        h.get(), buffer.data(), buffer.size(), path.getHandle(), &n);
-    ec = make_error_code(err);
+    ec = Error(PanConnWriteVia(
+        h.get(), buffer.data(), buffer.size(), path.getHandle(), &n));
     return static_cast<size_t>(n);
 }
 
@@ -821,7 +963,7 @@ ConnSockAdapter Conn::createSockAdapter(const char *goSocketPath, const char *cS
     GoHandle handle;
     PanError err = PanNewConnSockAdapter(
         h.get(), goSocketPath, cSocketPath, handle.resetAndGetAddressOf());
-    if (err) throw Exception(err);
+    if (err) throw Exception(Error(err));
     return ConnSockAdapter(std::move(handle));
 }
 
@@ -829,9 +971,8 @@ DLLEXPORT
 ConnSockAdapter Conn::createSockAdapter(const char *goSocketPath, const char *cSocketPath, std::error_code &ec) noexcept
 {
     GoHandle handle;
-    PanError err = PanNewConnSockAdapter(
-        h.get(), goSocketPath, cSocketPath, handle.resetAndGetAddressOf());
-    ec = make_error_code(err);
+    ec = Error(PanNewConnSockAdapter(
+        h.get(), goSocketPath, cSocketPath, handle.resetAndGetAddressOf()));
     return ConnSockAdapter(std::move(handle));
 }
 #endif // UNIX_DGRAM_AVAILABLE
@@ -843,7 +984,7 @@ ConnSSockAdapter Conn::createSSockAdapter(const char *goSocketPath)
     GoHandle handle;
     PanError err = PanNewConnSSockAdapter(
         h.get(), goSocketPath, handle.resetAndGetAddressOf());
-    if (err) throw Exception(err);
+    if (err) throw Exception(Error(err));
     return ConnSSockAdapter(std::move(handle));
 }
 
@@ -851,9 +992,8 @@ DLLEXPORT
 ConnSSockAdapter Conn::createSSockAdapter(const char *goSocketPath, std::error_code &ec) noexcept
 {
     GoHandle handle;
-    PanError err = PanNewConnSSockAdapter(
-        h.get(), goSocketPath, handle.resetAndGetAddressOf());
-    ec = make_error_code(err);
+    ec = Error(PanNewConnSSockAdapter(
+        h.get(), goSocketPath, handle.resetAndGetAddressOf()));
     return ConnSSockAdapter(std::move(handle));
 }
 #endif // UNIX_STREAM_AVAILABLE

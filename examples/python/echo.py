@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-# Copyright 2023 Lars-Christian Schulz
+# Copyright 2023-2024 Lars-Christian Schulz
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -89,7 +89,7 @@ class DefaultPathSelector(pan.PathSelector):
         self._paths = []
         self._curr_path = None
 
-    def path(self) -> Path:
+    def path(self, ctx) -> Path:
         with self._lock:
             return self._curr_path
 
@@ -126,7 +126,7 @@ class DefaultReplySelector(pan.ReplySelector):
         self._lock = threading.Lock()
         self._remotes = {}
 
-    def path(self, remote: UDPAddress) -> Path:
+    def path(self, ctx, remote: UDPAddress) -> Path:
         with self._lock:
             try:
                 return self._remotes[str(remote)]
@@ -148,9 +148,7 @@ class DefaultReplySelector(pan.ReplySelector):
 
 
 def run_server(args):
-    selector = DefaultReplySelector()
-
-    with udp.ListenConn(args.local, selector) as conn:
+    with udp.ListenConn(args.local, DefaultReplySelector()) as conn:
         print("Server listening at", conn.local())
 
         while True:
@@ -184,7 +182,7 @@ async def run_server_async(args):
     conn = sock_adapter = sock = None
 
     try:
-        conn = udp.ListenConn(args.local)
+        conn = udp.ListenConn(args.local, DefaultReplySelector())
         try:
             os.remove(PY_SOCK)
         except FileNotFoundError:
@@ -197,6 +195,7 @@ async def run_server_async(args):
         while True:
             msg = await loop.sock_recv(sock, 2048)
             print(msg[32:])
+            msg = msg[:32] + (0).to_bytes(8, 'little')+ msg[32:]
             await loop.sock_sendall(sock, msg)
 
     finally:
@@ -260,7 +259,7 @@ async def run_client_async(args):
         sock = sock_adapter.create_socket()
         sock.setblocking(False)
 
-        buffer = args.message.encode()
+        buffer = (0).to_bytes(8, 'little') + args.message.encode()
         for i in range(args.count):
             await loop.sock_sendall(sock, buffer)
 
@@ -299,6 +298,7 @@ def main():
 
     except pan.PanError as e:
         print("PAN error:", e)
+        print(pan.get_last_error())
 
 
 if __name__ == "__main__":

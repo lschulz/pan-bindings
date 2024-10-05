@@ -18,6 +18,7 @@ package main
 // #include "pan/pan_cdefs.h"
 // #define PAN_STREAM_HDR_SIZE 4
 // #define PAN_ADDR_HDR_SIZE 32
+// #define PAN_CTX_HDR_SIZE 8
 // /** \file
 //	* PAN C Wrapper
 //  * \defgroup handle Go Handles
@@ -42,6 +43,7 @@ import (
 	"context"
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"net"
 	"net/netip"
 	"os"
@@ -55,6 +57,11 @@ import (
 
 const STREAM_HDR_SIZE = 4
 const ADDR_HDR_SIZE = 32
+const CTX_HDR_SIZE = 8
+
+func calloc(num int, size uintptr) unsafe.Pointer {
+	return C.calloc(C.ulong(num), C.ulong(size))
+}
 
 /**
 \brief Duplicate a cgo handle.
@@ -75,6 +82,29 @@ func PanDeleteHandle(handle C.uintptr_t) {
 	h.Delete()
 }
 
+var lastErrorMutex sync.Mutex
+var lastError error
+
+func setLastError(err error) {
+	lastErrorMutex.Lock()
+	defer lastErrorMutex.Unlock()
+	lastError = err
+}
+
+/*
+\brief Get a description of error returned from the last API call.
+\details Since Go doesn't have thread-local variables, this value is not
+reliable if Go/PAN is called from more than one thread. The returned string must
+be freed with free().
+*/
+//export PanGetLastError
+func PanGetLastError() *C.char {
+	lastErrorMutex.Lock()
+	defer lastErrorMutex.Unlock()
+	str := fmt.Sprintf("%v", lastError)
+	return C.CString(str)
+}
+
 ///////////////
 // Addresses //
 ///////////////
@@ -88,6 +118,7 @@ func PanDeleteHandle(handle C.uintptr_t) {
 func PanResolveUDPAddr(address *C.cchar_t, resolved *C.PanUDPAddr) C.PanError {
 	addr, err := pan.ResolveUDPAddr(context.Background(), C.GoString(address))
 	if err != nil {
+		setLastError(err)
 		return C.PAN_ERR_ADDR_RESOLUTION
 	}
 	ptr := (*C.PanUDPAddr)(unsafe.Pointer(resolved))
@@ -137,11 +168,11 @@ func PanUDPAddrNew(ia *C.cuint64_t, ip *C.cuint8_t, ip_len C.int, port C.uint16_
 \ingroup addresses
 */
 //export PanUDPAddrGetIA
-func PanUDPAddrGetIA(addr C.PanUDPAddr, ia *C.uint64_t) {
+func PanUDPAddrGetIA(addr C.PanUDPAddr, ia *C.PanIA) {
 	var buf = make([]byte, 8)
 	if ia != nil {
 		address := cgo.Handle(addr).Value().(pan.UDPAddr)
-		binary.BigEndian.PutUint64(buf, (uint64)(address.IA))
+		binary.NativeEndian.PutUint64(buf, (uint64)(address.IA))
 		ptr := (*[8]C.uint8_t)(unsafe.Pointer(ia))
 		for i, b := range buf[:8] {
 			ptr[i] = C.uint8_t(b)
@@ -235,6 +266,43 @@ func PanUDPAddrToString(addr C.PanUDPAddr) *C.char {
 //////////
 
 /**
+\brief Query paths to a particular destination AS.
+\param[in] dst Destination ISD-ASN
+\param[out] paths Pointer to an array of path handles. The path handles must be
+	released using PanDeleteHandle() and the array itself freed with free().
+\param[out] n The length of the returned array. Must not be NULL.
+\return `PAN_ERR_OK` on success.
+	`PAN_ERR_INVALID_ARG` if `paths` or `n` is NULL.
+	`PAN_ERR_FAILED` if the path lookup failed.
+\ingroup path
+*/
+//export PanQueryPaths
+func PanQueryPaths(dst C.PanIA, paths **C.PanPath, n *C.int) C.PanError {
+	if paths == nil || n == nil {
+		setLastError(fmt.Errorf("invalid argument"))
+		return C.PAN_ERR_INVALID_ARG
+	}
+
+	list, err := pan.QueryPaths(context.Background(), pan.IA(dst))
+	if err != nil {
+		setLastError(err)
+		return C.PAN_ERR_FAILED
+	}
+
+	*n = C.int(len(list))
+	*paths = (*C.PanPath)(calloc(len(list), unsafe.Sizeof(C.PanPath(0))))
+	if *paths == nil {
+		setLastError(fmt.Errorf("memory allocation failed"))
+		return C.PAN_ERR_FAILED
+	}
+	pathsSlice := unsafe.Slice((*C.PanPath)(unsafe.Pointer(*paths)), len(list))
+	for i, path := range list {
+		pathsSlice[i] = (C.PanPath)(cgo.NewHandle(path))
+	}
+	return C.PAN_ERR_OK
+}
+
+/**
 \brief Return a string representing the path.
 The returned string must be freed with free().
 \ingroup path
@@ -243,6 +311,42 @@ The returned string must be freed with free().
 func PanPathToString(path C.PanPath) *C.char {
 	p := cgo.Handle(path).Value().(*pan.Path)
 	return C.CString(p.String())
+}
+
+/**
+\brief Get the paths's source AS as ISD-ASN.
+\ingroup path
+*/
+//export PanPathSource
+func PanPathSource(path C.PanPath) C.PanIA {
+	p := cgo.Handle(path).Value().(*pan.Path)
+	return C.PanIA(p.Source)
+}
+
+/**
+\brief Get the paths's destination AS as ISD-ASN.
+\ingroup path
+*/
+//export PanPathDestination
+func PanPathDestination(path C.PanPath) C.PanIA {
+	p := cgo.Handle(path).Value().(*pan.Path)
+	return C.PanIA(p.Destination)
+}
+
+/**
+\brief Returns the legnth of the path in the data plane.
+\return A negative return value indicates an error.
+\ingroup path
+*/
+//export PanPathDpLength
+func PanPathDpLength(path C.PanPath) C.int {
+	p := cgo.Handle(path).Value().(*pan.Path)
+	n, err := p.DataplaneLen()
+	if err != nil {
+		setLastError(err)
+		return -C.PAN_ERR_FAILED
+	}
+	return C.int(n)
 }
 
 /**
@@ -269,6 +373,111 @@ func PanPathContainsInterface(path C.PanPath, iface C.PanPathInterface) C.int {
 		}
 	}
 	return 0
+}
+
+/**
+\brief Get the path's metadata. The returned struct must be freed with
+PanFreePathMeta().
+\ingroup path
+*/
+//export PanPathMetadata
+func PanPathMetadata(path C.PanPath) *C.struct_PanPathMeta {
+	p := cgo.Handle(path).Value().(*pan.Path)
+	if p.Metadata == nil {
+		return nil
+	}
+
+	meta := (*C.struct_PanPathMeta)(calloc(1, unsafe.Sizeof(C.struct_PanPathMeta{})))
+	if meta == nil {
+		return nil
+	}
+
+	numIfaces := len(p.Metadata.Interfaces)
+	numASes := numIfaces/2 + 1
+	meta.HopCount = C.size_t(numASes)
+	meta.Hops = (*C.struct_PanMetaHop)(calloc(numASes, unsafe.Sizeof(C.struct_PanMetaHop{})))
+	if meta.Hops == nil {
+		C.PanFreePathMeta(meta)
+		setLastError(fmt.Errorf("memory allocation failed"))
+		return nil
+	}
+	hopSlice := unsafe.Slice((*C.struct_PanMetaHop)(unsafe.Pointer(meta.Hops)), numASes)
+
+	iface := 0
+	geo := 0
+	hops := 0
+	notes := 0
+	for i := 0; i < numASes; i++ {
+		// Interface IDs (2x per transit AS, 1x for first and last AS)
+		if i != 0 && iface < len(p.Metadata.Interfaces) {
+			hopSlice[i].IA = C.PanIA(p.Metadata.Interfaces[iface].IA)
+			hopSlice[i].Ingress = C.PanMetaInterface(p.Metadata.Interfaces[iface].IfID)
+			iface += 1
+		}
+		if iface < len(p.Metadata.Interfaces) {
+			hopSlice[i].IA = C.PanIA(p.Metadata.Interfaces[iface].IA)
+			hopSlice[i].Egress = C.PanMetaInterface(p.Metadata.Interfaces[iface].IfID)
+			iface += 1
+		}
+		// Router locations (2x per transit AS, 1x for first and last AS)
+		if i != 0 && geo < len(p.Metadata.Geo) {
+			hopSlice[i].IngRouter = C.struct_PanMetaGeo{
+				Latitude:  C.float(p.Metadata.Geo[geo].Latitude),
+				Longitude: C.float(p.Metadata.Geo[geo].Longitude),
+				Address:   C.CString(p.Metadata.Geo[geo].Address),
+			}
+			geo += 1
+		}
+		if geo < len(p.Metadata.Geo) {
+			hopSlice[i].EgrRouter = C.struct_PanMetaGeo{
+				Latitude:  C.float(p.Metadata.Geo[geo].Latitude),
+				Longitude: C.float(p.Metadata.Geo[geo].Longitude),
+				Address:   C.CString(p.Metadata.Geo[geo].Address),
+			}
+			geo += 1
+		}
+		// Internal hops (1x per AS, except first and last AS)
+		if i != 0 && hops < len(p.Metadata.InternalHops) {
+			hopSlice[i].InternalHops = C.uint32_t(p.Metadata.InternalHops[hops])
+			hops += 1
+		}
+		// Notes (1x per AS)
+		if notes < len(p.Metadata.Notes) {
+			hopSlice[i].Notes = C.CString(p.Metadata.Notes[notes])
+		}
+	}
+
+	numLinks := len(p.Metadata.Latency)
+	meta.LinkCount = C.size_t(numLinks)
+	meta.Links = (*C.struct_PanMetaLink)(calloc(numLinks, unsafe.Sizeof(C.struct_PanMetaLink{})))
+	if meta.Links == nil {
+		C.PanFreePathMeta(meta)
+		setLastError(fmt.Errorf("memory allocation failed"))
+		return nil
+	}
+	linkSlice := unsafe.Slice((*C.struct_PanMetaLink)(unsafe.Pointer(meta.Links)), numLinks)
+
+	ltype := 0
+	lat := 0
+	bw := 0
+	for i := 0; i < numLinks; i++ {
+		if i%2 == 0 && ltype < len(p.Metadata.LinkType) {
+			linkSlice[i].Type = C.enum_PanMetaLinkType(p.Metadata.LinkType[ltype])
+			ltype += 1
+		} else {
+			linkSlice[i].Type = C.PanMetaLinkInternal
+		}
+		if lat < len(p.Metadata.Latency) {
+			linkSlice[i].Latency = C.uint64_t(p.Metadata.Latency[lat].Nanoseconds())
+			lat += 1
+		}
+		if bw < len(p.Metadata.Bandwidth) {
+			linkSlice[i].Bandwidth = C.uint64_t(p.Metadata.Bandwidth[bw])
+			bw += 1
+		}
+	}
+
+	return meta
 }
 
 // Create cgo handles for each path in the slice.
@@ -375,8 +584,12 @@ func NewCSelector(callbacks *C.struct_PanSelectorCallbacks, user C.uintptr_t) *C
 	}
 }
 
-func (s *CSelector) Path() *pan.Path {
-	path := C.panCallSelectorPath(s.callbacks.path, s.user_data)
+func (s *CSelector) Path(ctx interface{}) *pan.Path {
+	cctx, ok := ctx.(C.PanContext)
+	if !ok {
+		cctx = 0
+	}
+	path := C.panCallSelectorPath(s.callbacks.path, cctx, s.user_data)
 	return cgo.Handle(path).Value().(*pan.Path)
 }
 
@@ -437,9 +650,13 @@ func NewCReplySelector(callbacks *C.struct_PanReplySelCallbacks, user C.uintptr_
 	}
 }
 
-func (s *CReplySelector) Path(remote pan.UDPAddr) *pan.Path {
+func (s *CReplySelector) Path(ctx interface{}, remote pan.UDPAddr) *pan.Path {
+	cctx, ok := ctx.(C.PanContext)
+	if !ok {
+		cctx = 0
+	}
 	rem := cgo.NewHandle(remote)
-	path := C.panCallReplySelPath(s.callbacks.path, C.PanUDPAddr(rem), s.user_data)
+	path := C.panCallReplySelPath(s.callbacks.path, cctx, C.PanUDPAddr(rem), s.user_data)
 	return cgo.Handle(path).Value().(*pan.Path)
 }
 
@@ -504,6 +721,7 @@ func PanListenUDP(
 
 	local, err := netip.ParseAddrPort(C.GoString(listen))
 	if err != nil {
+		setLastError(err)
 		return C.PAN_ERR_ADDR_SYNTAX
 	}
 
@@ -513,6 +731,7 @@ func PanListenUDP(
 
 	c, err := pan.ListenUDP(context.Background(), local, sel)
 	if err != nil {
+		setLastError(err)
 		return C.PAN_ERR_FAILED
 	}
 
@@ -542,6 +761,7 @@ func PanListenConnReadFrom(
 
 	read, addr, err := c.ReadFrom(p)
 	if err != nil {
+		setLastError(err)
 		if errors.Is(err, os.ErrDeadlineExceeded) {
 			return C.PAN_ERR_DEADLINE
 		} else {
@@ -582,6 +802,7 @@ func PanListenConnReadFromVia(
 
 	read, addr, via, err := c.ReadFromVia(p)
 	if err != nil {
+		setLastError(err)
 		if errors.Is(err, os.ErrDeadlineExceeded) {
 			return C.PAN_ERR_DEADLINE
 		} else {
@@ -617,14 +838,65 @@ func PanListenConnReadFromVia(
 */
 //export PanListenConnWriteTo
 func PanListenConnWriteTo(
-	conn C.PanListenConn, buffer *C.cvoid_t, len C.int, to C.PanUDPAddr, n *C.int) C.PanError {
-
+	conn C.PanListenConn,
+	buffer *C.cvoid_t,
+	len C.int,
+	to C.PanUDPAddr,
+	n *C.int,
+) C.PanError {
 	c := cgo.Handle(conn).Value().(pan.ListenConn)
 	p := C.GoBytes(unsafe.Pointer(buffer), len)
 	addr := cgo.Handle(to).Value().(pan.UDPAddr)
 
 	written, err := c.WriteTo(p, addr)
 	if err != nil {
+		setLastError(err)
+		if errors.Is(err, os.ErrDeadlineExceeded) {
+			return C.PAN_ERR_DEADLINE
+		} else if errors.Is(err, pan.ErrNoPath) {
+			return C.PAN_ERR_NO_PATH
+		} else {
+			return C.PAN_ERR_FAILED
+		}
+	}
+
+	if n != nil {
+		*(*C.int)(unsafe.Pointer(n)) = C.int(written)
+	}
+
+	return C.PAN_ERR_OK
+}
+
+/**
+\briefWrapper for `(pan.ListenConn).WriteToWithCtx`
+\param[in] conn Listening connection.
+\param[in] ctx is passed to the path selector.
+\param[in] buffer Pointer to a buffer containing the message.
+\param[in] len Length of the message in \p buffer in bytes.
+\param[in] to Destination address.
+\param[out] n Number of bytes written. Can be NULL to ignore.
+\return `PAN_ERR_OK` on success.
+	`PAN_ERR_DEADLINE` if the deadline was exceeded.
+	`PAN_ERR_NO_PATH` if no path to the destination is known.
+	`PAN_ERR_FAILED` if the operation failed in some other way.
+\ingroup listen_conn
+*/
+//export PanListenConnWriteToWithCtx
+func PanListenConnWriteToWithCtx(
+	conn C.PanListenConn,
+	ctx C.PanContext,
+	buffer *C.cvoid_t,
+	len C.int,
+	to C.PanUDPAddr,
+	n *C.int,
+) C.PanError {
+	c := cgo.Handle(conn).Value().(pan.ListenConn)
+	p := C.GoBytes(unsafe.Pointer(buffer), len)
+	addr := cgo.Handle(to).Value().(pan.UDPAddr)
+
+	written, err := c.WriteToWithCtx(ctx, p, addr)
+	if err != nil {
+		setLastError(err)
 		if errors.Is(err, os.ErrDeadlineExceeded) {
 			return C.PAN_ERR_DEADLINE
 		} else if errors.Is(err, pan.ErrNoPath) {
@@ -666,6 +938,7 @@ func PanListenConnWriteToVia(
 
 	written, err := c.WriteToVia(p, addr, via)
 	if err != nil {
+		setLastError(err)
 		if errors.Is(err, os.ErrDeadlineExceeded) {
 			return C.PAN_ERR_DEADLINE
 		} else {
@@ -739,6 +1012,7 @@ func PanListenConnClose(conn C.PanListenConn) C.PanError {
 	handle := cgo.Handle(conn)
 	err := handle.Value().(pan.ListenConn).Close()
 	if err != nil {
+		setLastError(err)
 		return C.PAN_ERR_FAILED
 	}
 	return C.PAN_ERR_OK
@@ -769,7 +1043,9 @@ func PanDialUDP(
 	local *C.cchar_t, remote C.PanUDPAddr,
 	policy C.PanPolicy,
 	selector C.PanSelector,
-	conn *C.PanConn) C.PanError {
+	conn *C.PanConn,
+) C.PanError {
+
 	var loc netip.AddrPort = netip.AddrPort{}
 	var pol pan.Policy = nil
 	var sel pan.Selector = nil
@@ -778,6 +1054,7 @@ func PanDialUDP(
 	if local != nil {
 		loc, err = netip.ParseAddrPort(C.GoString(local))
 		if err != nil {
+			setLastError(err)
 			return C.PAN_ERR_ADDR_SYNTAX
 		}
 	}
@@ -790,6 +1067,7 @@ func PanDialUDP(
 	}
 	c, err := pan.DialUDP(context.Background(), loc, rem, pol, sel)
 	if err != nil {
+		setLastError(err)
 		return C.PAN_ERR_FAILED
 	}
 	ptr := (*C.PanConn)(unsafe.Pointer(conn))
@@ -815,6 +1093,7 @@ func PanConnRead(conn C.PanConn, buffer *C.void, len C.int, n *C.int) C.PanError
 
 	read, err := c.Read(p)
 	if err != nil {
+		setLastError(err)
 		if errors.Is(err, os.ErrDeadlineExceeded) {
 			return C.PAN_ERR_DEADLINE
 		} else {
@@ -849,6 +1128,7 @@ func PanConnReadVia(
 
 	read, via, err := c.ReadVia(p)
 	if err != nil {
+		setLastError(err)
 		if errors.Is(err, os.ErrDeadlineExceeded) {
 			return C.PAN_ERR_DEADLINE
 		} else {
@@ -879,12 +1159,61 @@ func PanConnReadVia(
 \ingroup conn
 */
 //export PanConnWrite
-func PanConnWrite(conn C.PanListenConn, buffer *C.cvoid_t, len C.int, n *C.int) C.PanError {
+func PanConnWrite(
+	conn C.PanListenConn,
+	buffer *C.cvoid_t,
+	len C.int,
+	n *C.int,
+) C.PanError {
 	c := cgo.Handle(conn).Value().(pan.Conn)
 	p := C.GoBytes(unsafe.Pointer(buffer), len)
 
 	written, err := c.Write(p)
 	if err != nil {
+		setLastError(err)
+		if errors.Is(err, os.ErrDeadlineExceeded) {
+			return C.PAN_ERR_DEADLINE
+		} else if errors.Is(err, pan.ErrNoPath) {
+			return C.PAN_ERR_NO_PATH
+		} else {
+			return C.PAN_ERR_FAILED
+		}
+	}
+
+	if n != nil {
+		*(*C.int)(unsafe.Pointer(n)) = C.int(written)
+	}
+
+	return C.PAN_ERR_OK
+}
+
+/**
+\brief Wrapper for `(pan.Conn).WriteWithCtx`
+\param[in] conn Connection
+\param[in] ctx is passed to the path selector.
+\param[in] buffer Pointer to a buffer containing the message.
+\param[in] len Length of the message in \p buffer in bytes.
+\param[out] n Number of bytes written. Can be NULL to ignore.
+\return `PAN_ERR_OK` on success.
+	`PAN_ERR_DEADLINE` if the deadline was exceeded.
+	`PAN_ERR_NO_PATH` if no path to the destination is known.
+	`PAN_ERR_FAILED` if the operation failed in some other way.
+\ingroup conn
+*/
+//export PanConnWriteWithCtx
+func PanConnWriteWithCtx(
+	conn C.PanListenConn,
+	ctx C.PanContext,
+	buffer *C.cvoid_t,
+	len C.int,
+	n *C.int,
+) C.PanError {
+	c := cgo.Handle(conn).Value().(pan.Conn)
+	p := C.GoBytes(unsafe.Pointer(buffer), len)
+
+	written, err := c.WriteWithCtx(ctx, p)
+	if err != nil {
+		setLastError(err)
 		if errors.Is(err, os.ErrDeadlineExceeded) {
 			return C.PAN_ERR_DEADLINE
 		} else if errors.Is(err, pan.ErrNoPath) {
@@ -922,6 +1251,7 @@ func PanConnWriteVia(
 
 	written, err := c.WriteVia(via, p)
 	if err != nil {
+		setLastError(err)
 		if errors.Is(err, os.ErrDeadlineExceeded) {
 			return C.PAN_ERR_DEADLINE
 		} else {
@@ -1005,6 +1335,7 @@ func PanConnClose(conn C.PanConn) C.PanError {
 	handle := cgo.Handle(conn)
 	err := handle.Value().(pan.Conn).Close()
 	if err != nil {
+		setLastError(err)
 		return C.PAN_ERR_FAILED
 	}
 	return C.PAN_ERR_OK
@@ -1017,23 +1348,27 @@ func PanConnClose(conn C.PanConn) C.PanError {
 /**
 \brief Open a Unix datagram socket at `listen_addr` as proxy for `pan_conn`.
 
-All packets received by `pan_conn` are forwarded from `listen_addr` to `client_addr`.
-All packets received from the Unix socket are forwarded to `pan_conn`.
-The SCION address of the source or destination is prepended to the payload in a
-32 byte header:
+All packets received by `pan_conn` are forwarded from `listen_addr` to
+`client_addr`. All packets received from the Unix socket are forwarded to
+`pan_conn`. The SCION address of the source or destination is prepended to the
+payload in a 32 byte header. An additional 8 byte are added to the header when
+sending packets (received packets do not contain this field) that are
+interpreted as pointer that is passed as context to the path selector.
 \verbatim
 byte 0       1       2       3       4       5       6       7
      +-------+-------+-------+-------+-------+-------+-------+-------+
    0 |    ISD (BE)   |                     ASN (BE)                  |
      +-------+-------+-------+-------+-------+-------+-------+-------+
-   8 |    Host Addr. Length (LE)     |                               |
+   8 |    Host Addr. Length (NE)     |                               |
      +-------+-------+-------+-------+                               |
   16 |                         Host Address (BE)                     |
      +                               +-------+-------+-------+-------+
-  24 |                               | UDP Port (LE) |       0       |
+  24 |                               | UDP Port (NE) |       0       |
      +-------+-------+-------+-------+-------+-------+-------+-------+
+  32 |                    Path Selector Context (NE)                 |
+	 +-------+-------+-------+-------+-------+-------+-------+-------+
 BE = big-endian
-LE = little-endian
+NE = native-endian
 \endverbatim
 
 \param[in] pan_conn Listening PAN connection.
@@ -1053,6 +1388,7 @@ func PanNewListenSockAdapter(
 		C.GoString(listen_addr),
 		C.GoString(client_addr))
 	if err != nil {
+		setLastError(err)
 		return C.PAN_ERR_FAILED
 	}
 
@@ -1147,7 +1483,7 @@ func (ls *ListenSockAdapter) panToUnix() {
 				buffer[12+i] = b
 			}
 		}
-		binary.LittleEndian.PutUint16(buffer[28:30], pan_from.Port)
+		binary.NativeEndian.PutUint16(buffer[28:30], pan_from.Port)
 		message := buffer[:ADDR_HDR_SIZE+read]
 
 		// Pass to unix socket
@@ -1167,14 +1503,14 @@ func (ls *ListenSockAdapter) unixToPan() {
 		if err != nil {
 			return
 		}
-		if read < ADDR_HDR_SIZE {
+		if read < (ADDR_HDR_SIZE + CTX_HDR_SIZE) {
 			continue
 		}
 
 		// Parse destination from header
 		var to pan.UDPAddr
 		to.IA = (pan.IA)(binary.BigEndian.Uint64(buffer[:8]))
-		addr_len := binary.LittleEndian.Uint32(buffer[8:12])
+		addr_len := binary.NativeEndian.Uint32(buffer[8:12])
 		if addr_len == 4 {
 			to.IP = netip.AddrFrom4(*(*[4]byte)(buffer[12:16]))
 		} else if addr_len == 16 {
@@ -1182,10 +1518,13 @@ func (ls *ListenSockAdapter) unixToPan() {
 		} else {
 			continue
 		}
-		to.Port = binary.LittleEndian.Uint16(buffer[28:30])
+		to.Port = binary.NativeEndian.Uint16(buffer[28:30])
+
+		// Context for path selector
+		ctx := C.PanContext(binary.NativeEndian.Uint64(buffer[32:40]))
 
 		// Pass to network socket
-		_, err = ls.pan_conn.WriteTo(buffer[ADDR_HDR_SIZE:read], to)
+		_, err = ls.pan_conn.WriteToWithCtx(ctx, buffer[ADDR_HDR_SIZE+CTX_HDR_SIZE:read], to)
 		if err != nil {
 			return
 		}
@@ -1219,6 +1558,7 @@ func PanNewConnSockAdapter(
 		C.GoString(listen_addr),
 		C.GoString(client_addr))
 	if err != nil {
+		setLastError(err)
 		return C.PAN_ERR_FAILED
 	}
 
@@ -1313,9 +1653,15 @@ func (cs *ConnSockAdapter) unixToPan() {
 		if err != nil {
 			return
 		}
+		if read < CTX_HDR_SIZE {
+			continue
+		}
+
+		// Context for path selector
+		ctx := C.PanContext(binary.NativeEndian.Uint64(buffer[:CTX_HDR_SIZE]))
 
 		// Pass to network socket
-		_, err = cs.pan_conn.Write(buffer[:read])
+		_, err = cs.pan_conn.WriteWithCtx(ctx, buffer[CTX_HDR_SIZE:read])
 		if err != nil {
 			return
 		}
@@ -1331,7 +1677,7 @@ func (cs *ConnSockAdapter) unixToPan() {
 
 Behaves identical to `PanNewListenSockAdapter` except that a stream socket is
 used instead of a datagram socket. Packet borders in the stream are determined
-by prepending a four byte message length (little endian) in front of every
+by prepending a four byte message length (native endian) in front of every
 packet sent or received on the Unix socket.
 
 When initially created, the socket will listens for and accept exactly one
@@ -1356,6 +1702,7 @@ func PanNewListenSSockAdapter(
 		cgo.Handle(pan_conn).Value().(pan.ListenConn),
 		C.GoString(listen_addr))
 	if err != nil {
+		setLastError(err)
 		return C.PAN_ERR_FAILED
 	}
 
@@ -1441,7 +1788,7 @@ func (ls *ListenSSockAdapter) panToUnix() {
 		}
 
 		// Prepend message length
-		binary.LittleEndian.PutUint32(buffer[0:4], uint32(read+ADDR_HDR_SIZE))
+		binary.NativeEndian.PutUint32(buffer[0:4], uint32(read+ADDR_HDR_SIZE))
 
 		// Prepend from header to received bytes
 		pan_from, ok := from.(pan.UDPAddr)
@@ -1460,7 +1807,7 @@ func (ls *ListenSSockAdapter) panToUnix() {
 				buffer[16+i] = b
 			}
 		}
-		binary.LittleEndian.PutUint16(buffer[32:34], pan_from.Port)
+		binary.NativeEndian.PutUint16(buffer[32:34], pan_from.Port)
 		message := buffer[:STREAM_HDR_SIZE+ADDR_HDR_SIZE+read]
 
 		// Pass to Unix domain socket
@@ -1480,19 +1827,19 @@ func (ls *ListenSSockAdapter) unixToPan() {
 		if err != nil || read < STREAM_HDR_SIZE {
 			return
 		}
-		msglen := uint(binary.LittleEndian.Uint32(buffer[0:4]))
+		msglen := uint(binary.NativeEndian.Uint32(buffer[0:4]))
 		if msglen > uint(len(buffer)) {
 			return
 		}
 		read, err = ls.unix_conn.Read(buffer[:msglen])
-		if err != nil || read < ADDR_HDR_SIZE {
+		if err != nil || read < (ADDR_HDR_SIZE+CTX_HDR_SIZE) {
 			continue
 		}
 
 		// Parse destination from header
 		var to pan.UDPAddr
 		to.IA = (pan.IA)(binary.BigEndian.Uint64(buffer[:8]))
-		addr_len := binary.LittleEndian.Uint32(buffer[8:12])
+		addr_len := binary.NativeEndian.Uint32(buffer[8:12])
 		if addr_len == 4 {
 			to.IP = netip.AddrFrom4(*(*[4]byte)(buffer[12:16]))
 		} else if addr_len == 16 {
@@ -1500,10 +1847,13 @@ func (ls *ListenSSockAdapter) unixToPan() {
 		} else {
 			continue
 		}
-		to.Port = binary.LittleEndian.Uint16(buffer[28:30])
+		to.Port = binary.NativeEndian.Uint16(buffer[28:30])
+
+		// Context for path selector
+		ctx := C.PanContext(binary.NativeEndian.Uint64(buffer[32:40]))
 
 		// Pass to network socket
-		_, err = ls.pan_conn.WriteTo(buffer[ADDR_HDR_SIZE:read], to)
+		_, err = ls.pan_conn.WriteToWithCtx(ctx, buffer[ADDR_HDR_SIZE+CTX_HDR_SIZE:read], to)
 		if err != nil {
 			return
 		}
@@ -1519,7 +1869,7 @@ func (ls *ListenSSockAdapter) unixToPan() {
 
 Behaves identical to `PanNewConnSockAdapter` except that a stream socket is
 used instead of a datagram socket. Packet borders in the stream are determined
-by prepending a four byte message length (little endian) in front of every
+by prepending a four byte message length (native endian) in front of every
 packet sent or received on the Unix socket.
 
 When initially created, the socket will listens for and accept exactly one
@@ -1544,6 +1894,7 @@ func PanNewConnSSockAdapter(
 		cgo.Handle(pan_conn).Value().(pan.Conn),
 		C.GoString(listen_addr))
 	if err != nil {
+		setLastError(err)
 		return C.PAN_ERR_FAILED
 	}
 
@@ -1629,7 +1980,7 @@ func (cs *ConnSSockAdapter) panToUnix() {
 		}
 
 		// Pass to Unix domain socket
-		binary.LittleEndian.PutUint32(buffer[0:4], uint32(read))
+		binary.NativeEndian.PutUint32(buffer[0:4], uint32(read))
 		_, err = cs.unix_conn.Write(buffer[:STREAM_HDR_SIZE+read])
 		if err != nil {
 			return
@@ -1646,7 +1997,7 @@ func (cs *ConnSSockAdapter) unixToPan() {
 		if err != nil || read < STREAM_HDR_SIZE {
 			return
 		}
-		msglen := uint(binary.LittleEndian.Uint32(buffer[0:4]))
+		msglen := uint(binary.NativeEndian.Uint32(buffer[0:4]))
 		if msglen > uint(len(buffer)) {
 			return
 		}
@@ -1654,9 +2005,15 @@ func (cs *ConnSSockAdapter) unixToPan() {
 		if err != nil {
 			return
 		}
+		if read < CTX_HDR_SIZE {
+			continue
+		}
+
+		// Context for path selector
+		ctx := C.PanContext(binary.NativeEndian.Uint64(buffer[:CTX_HDR_SIZE]))
 
 		// Pass to network socket
-		_, err = cs.pan_conn.Write(buffer[:read])
+		_, err = cs.pan_conn.WriteWithCtx(ctx, buffer[CTX_HDR_SIZE:read])
 		if err != nil {
 			return
 		}

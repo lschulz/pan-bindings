@@ -1,4 +1,4 @@
-// Copyright 2023 Lars-Christian Schulz
+// Copyright 2023-2024 Lars-Christian Schulz
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -20,6 +20,7 @@
 
 constexpr size_t STREAM_HEADER_LEN = 4;
 constexpr size_t PROXY_HEADER_LEN = 32;
+constexpr size_t CTX_HEADER_LEN = 8;
 constexpr size_t MAX_MSG_LEN = 4096;
 
 struct ScionUDPAddr
@@ -29,6 +30,8 @@ struct ScionUDPAddr
     asio::ip::address ip;
     uint16_t port;
 };
+
+void insertCtxHeader(std::vector<char>& buffer, uint64_t ctx);
 
 ScionUDPAddr parseProxyHeader(const char* buffer, size_t len);
 

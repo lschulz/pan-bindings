@@ -1,4 +1,4 @@
-// Copyright 2023 Lars-Christian Schulz
+// Copyright 2023-2024 Lars-Christian Schulz
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -17,6 +17,7 @@
 #include <chrono>
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -53,14 +54,15 @@ enum class Error
     Deadline       = 2,
     NoPath         = 3,
     AddrSyntax     = 4,
-    AddrResolution = 5
+    AddrResolution = 5,
+    InvalidArg     = 6,
 };
 
 class Exception : public virtual std::exception
 {
 public:
     DLLEXPORT
-    Exception(std::uint32_t error);
+    Exception(Error error);
 
     const std::error_code& code() const noexcept
     { return ec; }
@@ -73,7 +75,22 @@ private:
     std::shared_ptr<std::string> message;
 };
 
+DLLEXPORT
+std::error_code make_error_code(Error e);
+
+DLLEXPORT
+std::string GetLastError();
+
+} // namespace Pan
+
+namespace std {
+template<> struct is_error_code_enum<Pan::Error> : true_type {};
+}
+
+namespace Pan {
+
 typedef std::uint64_t IA;
+typedef std::uint64_t IfID;
 
 namespace udp {
     class Endpoint;
@@ -118,6 +135,45 @@ private:
     GoHandle h;
 };
 
+enum class LinkType
+{
+    Unspecified = 0, ///< Link type not specified
+    Direct,          ///< Direct physical connection
+    MultiHop,        ///< Connected with local routing/switching
+    OpenNet,         ///< Connection overlayed over the public Internet
+    Internal = 255,  ///< AS internal link (SCION does not provide link type for internal links)
+};
+
+struct GeoCoordinates
+{
+    float       latitude;
+    float       longitude;
+    std::string address;
+};
+
+struct PathHop
+{
+    IA             ia;
+    IfID           ingress, egress;
+    GeoCoordinates ingRouter, egrRouter;
+    std::uint32_t  internalHops;
+    std::string    notes;
+};
+
+struct PathLink
+{
+    LinkType                 type;
+    std::chrono::nanoseconds latency;
+    std::uint64_t            bandwidth;
+};
+
+class PathMeta
+{
+public:
+    std::vector<PathHop>  hops;
+    std::vector<PathLink> links;
+};
+
 class Path final
 {
 public:
@@ -135,13 +191,41 @@ public:
     std::string toString() const;
 
     DLLEXPORT
+    IA getSource() const;
+    DLLEXPORT
+    IA getDestination() const;
+
+    DLLEXPORT
+    std::size_t dpLength() const;
+    DLLEXPORT
+    std::size_t dpLength(std::error_code& ec) const noexcept;
+
+    DLLEXPORT
     PathFingerprint getFingerprint() const;
     DLLEXPORT
     bool containsInterface(const PathInterface &iface) const;
 
+    DLLEXPORT
+    std::optional<PathMeta> getMetadata() const;
+
 private:
     GoHandle h;
 };
+
+inline std::ostream& operator<<(std::ostream& stream, const Path& path)
+{
+    stream << path.toString();
+    return stream;
+}
+
+/// \brief Query paths to a particular destination AS.
+/// \param[in] dst Destination ISD-ASN
+DLLEXPORT
+std::vector<Path> QueryPaths(IA dst);
+
+/// \copydoc queryPaths(IA)
+DLLEXPORT
+std::vector<Path> QueryPaths(IA dst, std::error_code& ec) noexcept;
 
 class PathPolicy
 {
@@ -180,7 +264,7 @@ public:
 
 public:
     // Callback for Go
-    static std::uintptr_t cbPath(std::uintptr_t user);
+    static std::uintptr_t cbPath(std::uint64_t ctx, std::uintptr_t user);
     static void cbInitialize(
         std::uintptr_t local, std::uintptr_t remote,
         std::uintptr_t* paths, size_t count, std::uintptr_t user);
@@ -189,7 +273,7 @@ public:
     static void cbClose(std::uintptr_t user);
 
 protected:
-    virtual Path path() = 0;
+    virtual Path path(std::uint64_t ctx) = 0;
     virtual void initialize(
         udp::Endpoint local, udp::Endpoint remote, std::vector<Path>& paths) = 0;
     virtual void refresh(std::vector<Path>& paths) = 0;
@@ -213,14 +297,14 @@ public:
 
 public:
     // Callbacks for Go
-    static std::uintptr_t cbPath(std::uintptr_t remote, std::uintptr_t user);
+    static std::uintptr_t cbPath(std::uint64_t ctx, std::uintptr_t remote, std::uintptr_t user);
     static void cbInitialize(std::uintptr_t local, std::uintptr_t user);
     static void cbRecord(std::uintptr_t remote, std::uintptr_t path, std::uintptr_t user);
     static void cbPathDown(std::uintptr_t pf, std::uintptr_t pi, std::uintptr_t user);
     static void cbClose(std::uintptr_t user);
 
 protected:
-    virtual Path path(udp::Endpoint remote) = 0;
+    virtual Path path(std::uint64_t ctx, udp::Endpoint remote) = 0;
     virtual void initialize(udp::Endpoint local) = 0;
     virtual void record(udp::Endpoint remote, Path path) = 0;
     virtual void pathDown(PathFingerprint pf, PathInterface pi) = 0;
@@ -271,9 +355,9 @@ private:
 };
 
 DLLEXPORT
-Endpoint resolveUDPAddr(const char* address);
+Endpoint ResolveUDPAddr(const char* address);
 DLLEXPORT
-Endpoint resolveUDPAddr(const char* address, std::error_code &ec) noexcept;
+Endpoint ResolveUDPAddr(const char* address, std::error_code &ec) noexcept;
 
 #ifdef UNIX_DGRAM_AVAILABLE
 /// \brief Unix datagram socket adapter (see PanNewListenSockAdapter())
@@ -402,6 +486,10 @@ public:
     std::size_t writeTo(asio::const_buffer buffer, const Endpoint& to);
     DLLEXPORT
     std::size_t writeTo(asio::const_buffer buffer, const Endpoint& to, std::error_code& ec) noexcept;
+    DLLEXPORT
+    std::size_t writeToWithCtx(std::uint64_t ctx, asio::const_buffer buffer, const Endpoint& to);
+    DLLEXPORT
+    std::size_t writeToWithCtx(std::uint64_t ctx, asio::const_buffer buffer, const Endpoint& to, std::error_code& ec) noexcept;
     DLLEXPORT
     std::size_t writeToVia(asio::const_buffer buffer, const Endpoint& to, const Path& path);
     DLLEXPORT
@@ -559,6 +647,10 @@ public:
     DLLEXPORT
     std::size_t write(asio::const_buffer buffer, std::error_code& ec) noexcept;
     DLLEXPORT
+    std::size_t writeWithCtx(std::uint64_t ctx, asio::const_buffer buffer);
+    DLLEXPORT
+    std::size_t writeWithCtx(std::uint64_t ctx, asio::const_buffer buffer, std::error_code& ec) noexcept;
+    DLLEXPORT
     std::size_t writeVia(asio::const_buffer buffer, const Path& path);
     DLLEXPORT
     std::size_t writeVia(asio::const_buffer buffer, const Path& path, std::error_code& ec) noexcept;
@@ -584,9 +676,3 @@ private:
 
 } // namespace udp
 } // namespace Pan
-
-namespace std
-{
-    template <>
-    struct is_error_code_enum<Pan::Error> : true_type {};
-}
