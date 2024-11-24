@@ -243,6 +243,21 @@ extern PanPathFingerprint PanPathGetFingerprint(PanPath path);
 extern int PanPathContainsInterface(PanPath path, PanPathInterface iface);
 
 /**
+\brief Get the path's expiry time in milliseconds since the Unix epoch.
+\ingroup path
+*/
+extern int64_t PanPathGetExpiry(PanPath path);
+
+/**
+\brief Get a lower bound on the maximum transmission unit (MTU) of the path.
+\details The MTU is based on metadata from path construction beacons. It might
+be inaccurate and does not take the connections from border router to end host
+into account.
+\ingroup path
+*/
+extern uint16_t PanPathGetMTU(PanPath path);
+
+/**
 \brief Get the path's metadata. The returned struct must be freed with
 PanFreePathMeta().
 \ingroup path
@@ -282,7 +297,9 @@ extern PanReplySelector PanNewCReplySelector(struct PanReplySelCallbacks* callba
 /**
 \brief Open a UDP socket and listen for connections.
 \param[in] listen is the local IP and port to listen on as a null-terminated
-	string (e.g., "127.0.0.1:8000").
+    string (e.g., "127.0.0.1:8000"). Either or both of IP and port can be zero
+    to choose automatically. Passing NULL also chooses IP and port
+	automatically.
 \param[in] selector Reply path selector. May be a PAN_INVALID_HANDLE to use the
 	default selector.
 \param[out] conn The value pointed to by \p conn receives the listening
@@ -408,8 +425,9 @@ extern PanError PanListenConnClose(PanListenConn conn);
 
 /**
 \brief Wrapper for `pan.DialUDP`
-\param[in] local is the local IP and port as string. Can be NULL to automatically
-	choose.
+\param[in] local is the local IP and port as string. Either or both of IP and
+	port can be zero to choose automatically. Passing NULL also chooses IP and
+	port automatically.
 \param[in] remote is the SCION address of the remote host.
 \param[in] policy Path policy. May be a PAN_INVALID_HANDLE to use the default
 	policy.
@@ -583,6 +601,16 @@ extern PanError PanListenSockAdapterClose(PanListenSockAdapter adapter);
 
 All packets received by pan_conn are forwarded from `listen_addr` to `client_addr`.
 All packets received from the unix socket are forwarded to `pan_conn`.
+
+Packet sent through the adapter must contain an 8 byte header that will be
+passed as context pointer to the reply path selector.
+\verbatim
+byte 0       1       2       3       4       5       6       7
+     +-------+-------+-------+-------+-------+-------+-------+-------+
+   0 |                    Path Selector Context (NE)                 |
+	 +-------+-------+-------+-------+-------+-------+-------+-------+
+NE = native-endian
+\endverbatim
 
 \param[in] pan_conn Connected PAN connection.
 \param[in] listen_addr Local address of the unix socket in the file system.

@@ -44,6 +44,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/netip"
 	"os"
@@ -60,7 +61,7 @@ const ADDR_HDR_SIZE = 32
 const CTX_HDR_SIZE = 8
 
 func calloc(num int, size uintptr) unsafe.Pointer {
-	return C.calloc(C.ulong(num), C.ulong(size))
+	return C.calloc(C.size_t(num), C.size_t(size))
 }
 
 /**
@@ -172,7 +173,7 @@ func PanUDPAddrGetIA(addr C.PanUDPAddr, ia *C.PanIA) {
 	var buf = make([]byte, 8)
 	if ia != nil {
 		address := cgo.Handle(addr).Value().(pan.UDPAddr)
-		binary.NativeEndian.PutUint64(buf, (uint64)(address.IA))
+		binary.BigEndian.PutUint64(buf, (uint64)(address.IA))
 		ptr := (*[8]C.uint8_t)(unsafe.Pointer(ia))
 		for i, b := range buf[:8] {
 			ptr[i] = C.uint8_t(b)
@@ -373,6 +374,32 @@ func PanPathContainsInterface(path C.PanPath, iface C.PanPathInterface) C.int {
 		}
 	}
 	return 0
+}
+
+/**
+\brief Get the path's expiry time in milliseconds since the Unix epoch.
+\ingroup path
+*/
+//export PanPathGetExpiry
+func PanPathGetExpiry(path C.PanPath) C.int64_t {
+	p := cgo.Handle(path).Value().(*pan.Path)
+	return C.int64_t(p.Expiry.UnixMilli())
+}
+
+/**
+\brief Get a lower bound on the maximum transmission unit (MTU) of the path.
+\details The MTU is based on metadata from path construction beacons. It might
+be inaccurate and does not take the connections from border router to end host
+into account.
+\ingroup path
+*/
+//export PanPathGetMTU
+func PanPathGetMTU(path C.PanPath) C.uint16_t {
+	p := cgo.Handle(path).Value().(*pan.Path)
+	if p.Metadata == nil {
+		return 0
+	}
+	return C.uint16_t(p.Metadata.MTU)
 }
 
 /**
@@ -590,7 +617,11 @@ func (s *CSelector) Path(ctx interface{}) *pan.Path {
 		cctx = 0
 	}
 	path := C.panCallSelectorPath(s.callbacks.path, cctx, s.user_data)
-	return cgo.Handle(path).Value().(*pan.Path)
+	if path != C.PAN_INVALID_HANDLE {
+		return cgo.Handle(path).Value().(*pan.Path)
+	} else {
+		return nil
+	}
 }
 
 func (s *CSelector) Initialize(local, remote pan.UDPAddr, paths []*pan.Path) {
@@ -657,7 +688,11 @@ func (s *CReplySelector) Path(ctx interface{}, remote pan.UDPAddr) *pan.Path {
 	}
 	rem := cgo.NewHandle(remote)
 	path := C.panCallReplySelPath(s.callbacks.path, cctx, C.PanUDPAddr(rem), s.user_data)
-	return cgo.Handle(path).Value().(*pan.Path)
+	if path != C.PAN_INVALID_HANDLE {
+		return cgo.Handle(path).Value().(*pan.Path)
+	} else {
+		return nil
+	}
 }
 
 func (s *CReplySelector) Initialize(local pan.UDPAddr) {
@@ -667,8 +702,11 @@ func (s *CReplySelector) Initialize(local pan.UDPAddr) {
 
 func (s *CReplySelector) Record(remote pan.UDPAddr, path *pan.Path) {
 	rem := cgo.NewHandle(remote)
-	handle := cgo.NewHandle(path)
-	C.panCallReplySelRecord(s.callbacks.record, C.PanUDPAddr(rem), C.PanPath(handle), s.user_data)
+	var hpath cgo.Handle
+	if path != nil {
+		hpath = cgo.NewHandle(path)
+	}
+	C.panCallReplySelRecord(s.callbacks.record, C.PanUDPAddr(rem), C.PanPath(hpath), s.user_data)
 }
 
 func (s *CReplySelector) PathDown(pf pan.PathFingerprint, pi pan.PathInterface) {
@@ -704,7 +742,9 @@ func PanNewCReplySelector(
 /**
 \brief Open a UDP socket and listen for connections.
 \param[in] listen is the local IP and port to listen on as a null-terminated
-	string (e.g., "127.0.0.1:8000").
+    string (e.g., "127.0.0.1:8000"). Either or both of IP and port can be zero
+    to choose automatically. Passing NULL also chooses IP and port
+	automatically.
 \param[in] selector Reply path selector. May be a PAN_INVALID_HANDLE to use the
 	default selector.
 \param[out] conn The value pointed to by \p conn receives the listening
@@ -717,12 +757,17 @@ func PanNewCReplySelector(
 //export PanListenUDP
 func PanListenUDP(
 	listen *C.cchar_t, selector C.PanReplySelector, conn *C.PanListenConn) C.PanError {
-	var sel pan.ReplySelector = nil
 
-	local, err := netip.ParseAddrPort(C.GoString(listen))
-	if err != nil {
-		setLastError(err)
-		return C.PAN_ERR_ADDR_SYNTAX
+	var local netip.AddrPort
+	var sel pan.ReplySelector
+	var err error
+
+	if listen != nil {
+		local, err = netip.ParseAddrPort(C.GoString(listen))
+		if err != nil {
+			setLastError(err)
+			return C.PAN_ERR_ADDR_SYNTAX
+		}
 	}
 
 	if selector != 0 {
@@ -814,7 +859,11 @@ func PanListenConnReadFromVia(
 		*(*C.PanUDPAddr)(unsafe.Pointer(from)) = C.PanUDPAddr(cgo.NewHandle(addr))
 	}
 	if path != nil {
-		*(*C.PanPath)(unsafe.Pointer(path)) = C.PanPath(cgo.NewHandle(via))
+		if via != nil {
+			*(*C.PanPath)(unsafe.Pointer(path)) = C.PanPath(cgo.NewHandle(via))
+		} else {
+			*path = C.PAN_INVALID_HANDLE
+		}
 	}
 	if n != nil {
 		*(*C.int)(unsafe.Pointer(n)) = C.int(read)
@@ -1024,8 +1073,9 @@ func PanListenConnClose(conn C.PanListenConn) C.PanError {
 
 /**
 \brief Wrapper for `pan.DialUDP`
-\param[in] local is the local IP and port as string. Can be NULL to automatically
-	choose.
+\param[in] local is the local IP and port as string. Either or both of IP and
+	port can be zero to choose automatically. Passing NULL also chooses IP and
+	port automatically.
 \param[in] remote is the SCION address of the remote host.
 \param[in] policy Path policy. May be a PAN_INVALID_HANDLE to use the default
 	policy.
@@ -1137,7 +1187,11 @@ func PanConnReadVia(
 	}
 
 	if path != nil {
-		*(*C.PanPath)(unsafe.Pointer(path)) = C.PanPath(cgo.NewHandle(via))
+		if via != nil {
+			*(*C.PanPath)(unsafe.Pointer(path)) = C.PanPath(cgo.NewHandle(via))
+		} else {
+			*path = C.PAN_INVALID_HANDLE
+		}
 	}
 	if n != nil {
 		*(*C.int)(unsafe.Pointer(n)) = C.int(read)
@@ -1463,7 +1517,11 @@ func (ls *ListenSockAdapter) panToUnix() {
 		// Read from network
 		read, from, err := ls.pan_conn.ReadFrom(buffer[ADDR_HDR_SIZE:])
 		if err != nil {
-			return
+			debugPrintf("PAN: ListenSockAdapter panToUnix ReadFrom: %v\n", err)
+			if errors.Is(err, net.ErrClosed) || errors.Is(err, io.EOF) {
+				return
+			}
+			continue
 		}
 
 		// Prepend from header to received bytes
@@ -1489,6 +1547,7 @@ func (ls *ListenSockAdapter) panToUnix() {
 		// Pass to unix socket
 		_, err = ls.unix_conn.WriteToUnix(message, ls.unix_remote)
 		if err != nil {
+			debugPrintf("PAN: ListenSockAdapter panToUnix WriteToUnix: %v\n", err)
 			return
 		}
 	}
@@ -1501,9 +1560,11 @@ func (ls *ListenSockAdapter) unixToPan() {
 		// Read from unix socket
 		read, _, err := ls.unix_conn.ReadFromUnix(buffer)
 		if err != nil {
+			debugPrintf("PAN: ListenSockAdapter unixToPan ReadFromUnix: %v\n", err)
 			return
 		}
 		if read < (ADDR_HDR_SIZE + CTX_HDR_SIZE) {
+			debugPrintf("PAN: ListenSockAdapter unixToPan ReadFromUnix: runt packet %dB\n", read)
 			continue
 		}
 
@@ -1516,6 +1577,7 @@ func (ls *ListenSockAdapter) unixToPan() {
 		} else if addr_len == 16 {
 			to.IP = netip.AddrFrom16(*(*[16]byte)(buffer[12:28]))
 		} else {
+			debugPrintf("PAN: ListenSockAdapter unixToPan: invalid header\n")
 			continue
 		}
 		to.Port = binary.NativeEndian.Uint16(buffer[28:30])
@@ -1526,7 +1588,11 @@ func (ls *ListenSockAdapter) unixToPan() {
 		// Pass to network socket
 		_, err = ls.pan_conn.WriteToWithCtx(ctx, buffer[ADDR_HDR_SIZE+CTX_HDR_SIZE:read], to)
 		if err != nil {
-			return
+			debugPrintf("PAN: ListenSockAdapter unixToPan WriteToWithCtx: %v\n", err)
+			if errors.Is(err, net.ErrClosed) {
+				return
+			}
+			continue
 		}
 	}
 }
@@ -1540,6 +1606,16 @@ func (ls *ListenSockAdapter) unixToPan() {
 
 All packets received by pan_conn are forwarded from `listen_addr` to `client_addr`.
 All packets received from the unix socket are forwarded to `pan_conn`.
+
+Packet sent through the adapter must contain an 8 byte header that will be
+passed as context pointer to the reply path selector.
+\verbatim
+byte 0       1       2       3       4       5       6       7
+     +-------+-------+-------+-------+-------+-------+-------+-------+
+   0 |                    Path Selector Context (NE)                 |
+	 +-------+-------+-------+-------+-------+-------+-------+-------+
+NE = native-endian
+\endverbatim
 
 \param[in] pan_conn Connected PAN connection.
 \param[in] listen_addr Local address of the unix socket in the file system.
@@ -1633,12 +1709,17 @@ func (cs *ConnSockAdapter) panToUnix() {
 		// Read from network
 		read, err := cs.pan_conn.Read(buffer)
 		if err != nil {
-			return
+			debugPrintf("PAN: ConnSockAdapter panToUnix Read: %v\n", err)
+			if errors.Is(err, net.ErrClosed) || errors.Is(err, io.EOF) {
+				return
+			}
+			continue
 		}
 
 		// Pass to Unix domain socket
 		_, err = cs.unix_conn.WriteToUnix(buffer[:read], cs.unix_remote)
 		if err != nil {
+			debugPrintf("PAN: ConnSockAdapter panToUnix WriteToUnix: %v\n", err)
 			return
 		}
 	}
@@ -1651,9 +1732,11 @@ func (cs *ConnSockAdapter) unixToPan() {
 		// Read from Unix domain socket
 		read, _, err := cs.unix_conn.ReadFromUnix(buffer)
 		if err != nil {
+			debugPrintf("PAN: ConnSockAdapter unixToPan ReadFromUnix: %v\n", err)
 			return
 		}
 		if read < CTX_HDR_SIZE {
+			debugPrintf("PAN: ConnSockAdapter unixToPan: runt packet %dB\n", read)
 			continue
 		}
 
@@ -1663,7 +1746,11 @@ func (cs *ConnSockAdapter) unixToPan() {
 		// Pass to network socket
 		_, err = cs.pan_conn.WriteWithCtx(ctx, buffer[CTX_HDR_SIZE:read])
 		if err != nil {
-			return
+			debugPrintf("PAN: ConnSockAdapter unixToPan WriteWithCtx: %v\n", err)
+			if errors.Is(err, net.ErrClosed) {
+				return
+			}
+			continue
 		}
 	}
 }
@@ -1761,6 +1848,7 @@ func (ls *ListenSSockAdapter) waitForConn() {
 	conn, err := ls.unix_listener.AcceptUnix()
 	defer ls.unix_listener.Close()
 	if err != nil {
+		debugPrintf("PAN: ListenSSockAdapter waitForConn AcceptUnix: %v\n", err)
 		return
 	}
 	ls.unix_conn = conn
@@ -1784,7 +1872,11 @@ func (ls *ListenSSockAdapter) panToUnix() {
 		// Read from network
 		read, from, err := ls.pan_conn.ReadFrom(buffer[STREAM_HDR_SIZE+ADDR_HDR_SIZE:])
 		if err != nil {
-			return
+			debugPrintf("PAN: ListenSSockAdapter panToUnix ReadFrom: %v\n", err)
+			if errors.Is(err, net.ErrClosed) || errors.Is(err, io.EOF) {
+				return
+			}
+			continue
 		}
 
 		// Prepend message length
@@ -1813,6 +1905,7 @@ func (ls *ListenSSockAdapter) panToUnix() {
 		// Pass to Unix domain socket
 		_, err = ls.unix_conn.Write(message)
 		if err != nil {
+			debugPrintf("PAN: ListenSSockAdapter panToUnix Write: %v\n", err)
 			return
 		}
 	}
@@ -1824,16 +1917,26 @@ func (ls *ListenSSockAdapter) unixToPan() {
 	for {
 		// Read from Unix domain socket
 		read, err := ls.unix_conn.Read(buffer[:STREAM_HDR_SIZE])
-		if err != nil || read < STREAM_HDR_SIZE {
+		if err != nil {
+			debugPrintf("PAN: ListenSSockAdapter unixToPan Read: %v\n", err)
+			return
+		}
+		if read < STREAM_HDR_SIZE {
+			debugPrintf("PAN: ListenSSockAdapter unixToPan: runt packet %dB\n", read)
 			return
 		}
 		msglen := uint(binary.NativeEndian.Uint32(buffer[0:4]))
-		if msglen > uint(len(buffer)) {
+		if (msglen < (ADDR_HDR_SIZE + CTX_HDR_SIZE)) || (msglen > uint(len(buffer))) {
+			debugPrintf("PAN: ListenSSockAdapter unixToPan: invalid header\n")
 			return
 		}
-		read, err = ls.unix_conn.Read(buffer[:msglen])
-		if err != nil || read < (ADDR_HDR_SIZE+CTX_HDR_SIZE) {
-			continue
+		for total := uint(0); total < msglen; {
+			read, err = ls.unix_conn.Read(buffer[total:msglen])
+			if err != nil {
+				debugPrintf("PAN: ListenSSockAdapter unixToPan Read: %v\n", err)
+				return
+			}
+			total += uint(read)
 		}
 
 		// Parse destination from header
@@ -1845,6 +1948,7 @@ func (ls *ListenSSockAdapter) unixToPan() {
 		} else if addr_len == 16 {
 			to.IP = netip.AddrFrom16(*(*[16]byte)(buffer[12:28]))
 		} else {
+			debugPrintf("PAN: ListenSSockAdapter unixToPan: invalid header\n")
 			continue
 		}
 		to.Port = binary.NativeEndian.Uint16(buffer[28:30])
@@ -1855,7 +1959,11 @@ func (ls *ListenSSockAdapter) unixToPan() {
 		// Pass to network socket
 		_, err = ls.pan_conn.WriteToWithCtx(ctx, buffer[ADDR_HDR_SIZE+CTX_HDR_SIZE:read], to)
 		if err != nil {
-			return
+			debugPrintf("PAN: ListenSSockAdapter unixToPan WriteToWithCtx: %v\n", err)
+			if errors.Is(err, net.ErrClosed) {
+				return
+			}
+			continue
 		}
 	}
 }
@@ -1953,6 +2061,7 @@ func (cs *ConnSSockAdapter) waitForConn() {
 	conn, err := cs.unix_listener.AcceptUnix()
 	defer cs.unix_listener.Close()
 	if err != nil {
+		debugPrintf("PAN: ConnSSockAdapter waitForConn AcceptUnix: %v\n", err)
 		return
 	}
 	cs.unix_conn = conn
@@ -1976,13 +2085,18 @@ func (cs *ConnSSockAdapter) panToUnix() {
 		// Read from network
 		read, err := cs.pan_conn.Read(buffer[STREAM_HDR_SIZE:])
 		if err != nil {
-			return
+			debugPrintf("PAN: ConnSSockAdapter panToUnix Read: %v\n", err)
+			if errors.Is(err, net.ErrClosed) || errors.Is(err, io.EOF) {
+				return
+			}
+			continue
 		}
 
 		// Pass to Unix domain socket
 		binary.NativeEndian.PutUint32(buffer[0:4], uint32(read))
 		_, err = cs.unix_conn.Write(buffer[:STREAM_HDR_SIZE+read])
 		if err != nil {
+			debugPrintf("PAN: ConnSSockAdapter panToUnix Write: %v\n", err)
 			return
 		}
 	}
@@ -1994,19 +2108,26 @@ func (cs *ConnSSockAdapter) unixToPan() {
 	for {
 		// Read from Unix domain socket
 		read, err := cs.unix_conn.Read(buffer[:STREAM_HDR_SIZE])
-		if err != nil || read < STREAM_HDR_SIZE {
+		if err != nil {
+			debugPrintf("PAN: ConnSSockAdapter unixToPan Read: %v\n", err)
+			return
+		}
+		if read < STREAM_HDR_SIZE {
+			debugPrintf("PAN: ConnSSockAdapter unixToPan: runt packet %dB\n", read)
 			return
 		}
 		msglen := uint(binary.NativeEndian.Uint32(buffer[0:4]))
-		if msglen > uint(len(buffer)) {
+		if (msglen < CTX_HDR_SIZE) || (msglen > uint(len(buffer))) {
+			debugPrintf("PAN: ConnSSockAdapter unixToPan: invalid header\n")
 			return
 		}
-		read, err = cs.unix_conn.Read(buffer[:msglen])
-		if err != nil {
-			return
-		}
-		if read < CTX_HDR_SIZE {
-			continue
+		for total := uint(0); total < msglen; {
+			read, err = cs.unix_conn.Read(buffer[total:msglen])
+			if err != nil {
+				debugPrintf("PAN: ListenSSockAdapter unixToPan Read: %v\n", err)
+				return
+			}
+			total += uint(read)
 		}
 
 		// Context for path selector
@@ -2015,7 +2136,11 @@ func (cs *ConnSSockAdapter) unixToPan() {
 		// Pass to network socket
 		_, err = cs.pan_conn.WriteWithCtx(ctx, buffer[CTX_HDR_SIZE:read])
 		if err != nil {
-			return
+			debugPrintf("PAN: ConnSSockAdapter unixToPan WriteWithCtx: %v\n", err)
+			if errors.Is(err, net.ErrClosed) {
+				return
+			}
+			continue
 		}
 	}
 }

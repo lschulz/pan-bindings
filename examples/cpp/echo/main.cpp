@@ -176,6 +176,7 @@ int runServer(Arguments& args)
     std::stringstream stream;
     stream << "Server listening at " << local.toString() << '\n';
     stream << "Press q to quit.\n";
+    CON_WIN32(std::cout << stream.str());
     CON_CURSES(ncurses::print(stream.str().c_str()));
 
     std::vector<char> buffer(2028);
@@ -272,7 +273,7 @@ int main(int argc, char* argv[])
             return runClient(args);
         }
     }
-    catch (Pan::Exception &e) {
+    catch (const Pan::Exception& e) {
         std::cout << "PAN error: " << e.what() << '\n';
         std::cout << Pan::GetLastError() << std::endl;
         return EXIT_FAILURE;

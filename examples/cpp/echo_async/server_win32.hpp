@@ -1,7 +1,4 @@
-#pragma once
-
-#include "args.hpp"
-// Copyright 2023 Lars-Christian Schulz
+// Copyright 2023-2024 Lars-Christian Schulz
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -17,6 +14,7 @@
 
 #pragma once
 
+#include "args.hpp"
 #include "proxy.hpp"
 #include "common/message_parser.hpp"
 #include "pan/pan.hpp"
@@ -128,12 +126,13 @@ private:
             size_t dataLen = bytes - PROXY_HEADER_LEN;
             std::cout << "Received " << dataLen << " bytes from " << from << ":\n";
             printBuffer(std::cout, buffer.data() + PROXY_HEADER_LEN, dataLen) << "\n";
+            buffer.insert(buffer.begin() + PROXY_HEADER_LEN, CTX_HEADER_LEN, 0);
             headerBuffer.resize(STREAM_HEADER_LEN);
             auto uintBytes = static_cast<uint32_t>(bytes);
             std::memcpy(headerBuffer.data(), &uintBytes, sizeof(uint32_t));
             std::array<asio::const_buffer, 2> buffers = {
                 asio::buffer(headerBuffer),
-                asio::buffer(buffer, bytes)
+                asio::buffer(buffer, bytes + CTX_HEADER_LEN)
             };
             socket.async_send(buffers, std::bind(&Server::sent, this, _1, _2));
         }

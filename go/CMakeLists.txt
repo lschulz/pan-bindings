@@ -11,14 +11,11 @@ else()
     set(LIB a)
 endif()
 
-if (NOT CMAKE_BUILD_TYPE OR CMAKE_BUILD_TYPE STREQUAL "Debug")
-    # -N disables optimizations
-    # -l disables inlining
-    set(GCFLAGS -N -l)
-    set(CGO_BUILD_FLAGS -gcflags="${GCFLAGS}")
-else()
-    set(CGO_BUILD_FLAGS)
-endif()
+
+# -N disables optimizations
+# -l disables inlining
+set(GCFLAGS_DEBUG -N -l)
+set(CGO_BUILD_FLAGS_DEBUG -gcflags="${GCFLAGS_DEBUG}" -tags debug)
 
 set(CGO_OUT_NAME cgo_out)
 set(HEADER ${CGO_OUT_NAME}.h)
@@ -32,8 +29,9 @@ add_custom_command(
     OUTPUT ${CGO_STATIC_LIBRARY}
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
     COMMAND ${CMAKE_COMMAND} -E env CGO_ENABLED=1
-         ${GO_BINARY} build ${CGO_BUILD_FLAGS} -buildmode=c-archive
+         ${GO_BINARY} build "$<$<CONFIG:DEBUG>:${CGO_BUILD_FLAGS_DEBUG}>" -buildmode=c-archive
         -o "${CMAKE_CURRENT_BINARY_DIR}/${CGO_STATIC_LIBRARY}" ${CMAKE_CURRENT_SOURCE_DIR}
+    COMMAND_EXPAND_LISTS
     DEPENDS ${SRC} ${HEADERS}
 )
 add_custom_command(

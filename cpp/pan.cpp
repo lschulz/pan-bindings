@@ -31,12 +31,12 @@ using CString = std::unique_ptr<char, FreeDeleter>;
 
 struct PanErrorCategory : public std::error_category
 {
-    const char* name() const noexcept
+    const char* name() const noexcept override
     {
         return "PAN C++ Wrapper";
     }
 
-    std::string message(int errorCode) const noexcept
+    std::string message(int errorCode) const noexcept override
     {
         using Pan::Error;
         switch (static_cast<Error>(errorCode))

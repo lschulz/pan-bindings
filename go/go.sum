@@ -69,8 +69,10 @@ github.com/konsorten/go-windows-terminal-sequences v1.0.1/go.mod h1:T0+1ngSBFLxv
 github.com/kr/pretty v0.1.0/go.mod h1:dAy3ld7l9f0ibDNOQOHHMYYIIbhfbHSm3C4ZsoJORNo=
 github.com/kr/pty v1.1.1/go.mod h1:pFQYn66WHrOpPYNljwOMqo10TkYh1fy3cYio2l3bCsQ=
 github.com/kr/text v0.1.0/go.mod h1:4Jbv+DJW3UT/LiOwJeYQe1efqtUx/iVham/4vfdArNI=
-github.com/lschulz/scion-apps v0.0.0-20241006194236-d3f088b386f9 h1:vUVy8xID4NxVcFh5CO7LJJjiU3fRhJ2TzXYsWvXqKdk=
-github.com/lschulz/scion-apps v0.0.0-20241006194236-d3f088b386f9/go.mod h1:mqnvavrMmpDk7PGYxGQgikZOHI98L/oLjx3I2E1X28Y=
+github.com/lschulz/scion v0.11.1-0.20241123215440-de8fff43ab16 h1:DO5AC96aV5HB1KEpqCHZifsaGIKj8dSZBbO7i3/GUAI=
+github.com/lschulz/scion v0.11.1-0.20241123215440-de8fff43ab16/go.mod h1:paxrF6VreownCN7E7Rdri6ifXMkiq3leFGoP6n/BFC4=
+github.com/lschulz/scion-apps v0.0.0-20241123211024-dcdb2dc92316 h1:YoKxCeFgPRjDdqNwhcStj2XURVUZtKuaZuTJkurIBTU=
+github.com/lschulz/scion-apps v0.0.0-20241123211024-dcdb2dc92316/go.mod h1:0DwUeqAwMMtO2LHc3Z7tIym+vqNcKq5ZXYVL2tSMCxo=
 github.com/mattn/go-colorable v0.1.13 h1:fFA4WZxdEF4tXPZVKMLwD8oUnCTTo08duU7wxecdEvA=
 github.com/mattn/go-colorable v0.1.13/go.mod h1:7S9/ev0klgBDR4GtXTXX8a3vIGJpMovkB8vQcUbaXHg=
 github.com/mattn/go-isatty v0.0.16/go.mod h1:kYGgaQfpe5nmfYZH+SKPsOc2e4SrIfOl2e/yFXSvRLM=
@@ -108,8 +110,6 @@ github.com/quic-go/quic-go v0.43.1 h1:fLiMNfQVe9q2JvSsiXo4fXOEguXHGGl9+6gLp4RPeZ
 github.com/quic-go/quic-go v0.43.1/go.mod h1:132kz4kL3F9vxhW3CtQJLDVwcFe5wdWeJXXijhsO57M=
 github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec h1:W09IVJc94icq4NjY3clb7Lk8O1qJ8BdBEF8z0ibU0rE=
 github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec/go.mod h1:qqbHyh8v60DhA7CoWK5oRCqLrMHRGoxYCSS9EjAz6Eo=
-github.com/scionproto/scion v0.11.1-0.20240610170620-50b971ca2d4b h1:n4jkPRHGsPC4xNCkVXhOy2qzqUGuMrO6A1zuY1W/2FY=
-github.com/scionproto/scion v0.11.1-0.20240610170620-50b971ca2d4b/go.mod h1:paxrF6VreownCN7E7Rdri6ifXMkiq3leFGoP6n/BFC4=
 github.com/sirupsen/logrus v1.4.2/go.mod h1:tLMulIdttU9McNUspp0xgXVQah82FyeX6MwdIuYE2rE=
 github.com/stretchr/objx v0.1.0/go.mod h1:HFkY916IF+rwdDfMAkV7OtwuqBVzrE8GR6GFx+wExME=
 github.com/stretchr/objx v0.1.1/go.mod h1:HFkY916IF+rwdDfMAkV7OtwuqBVzrE8GR6GFx+wExME=

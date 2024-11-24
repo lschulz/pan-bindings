@@ -43,9 +43,13 @@ int main(int argc, char* argv[])
             return Client().connect(args);
         }
     }
-    catch (Pan::Exception &e) {
+    catch (const Pan::Exception& e) {
         std::cout << "PAN error: " << e.what() << '\n';
         std::cout << Pan::GetLastError() << std::endl;
+        return EXIT_FAILURE;
+    }
+    catch (const std::system_error& e) {
+        std::cout << "Error: " << e.what() << '\n';
         return EXIT_FAILURE;
     }
 }

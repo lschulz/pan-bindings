@@ -242,7 +242,7 @@ class ListenConn:
         return (
             bytes(buffer[:read.value]),
             UDPAddress(OwningHandle(from_addr)),
-            Path(OwningHandle(path))
+            Path(OwningHandle(path)) if path else None
         )
 
     def write_to(self, data: bytes|bytearray, to_addr: UDPAddress) -> int:
@@ -270,7 +270,7 @@ class ListenConn:
 
         hCtx = register_handle(ctx)
         try:
-            err = _listen_conn_write_to_with_ctx(self._handle, byref(ctx),
+            err = _listen_conn_write_to_with_ctx(self._handle, hCtx,
                 buffer, len(buffer), to_addr._handle, byref(read))
         finally:
             free_handle(ctx)
@@ -413,7 +413,7 @@ class Conn:
         elif err != _ERR_OK:
             _raise_if_error(err)
 
-        return bytes(buffer[:read.value]), Path(OwningHandle(path))
+        return bytes(buffer[:read.value]), Path(OwningHandle(path)) if path else None
 
     def write(self, data: bytes|bytearray) -> int:
         _raise_if_none(self._handle)

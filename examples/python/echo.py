@@ -67,7 +67,7 @@ class InteractivePathPolicy(pan.PathPolicy):
                     print("Invalid selection")
                     continue
                 if 0 <= selection < len(paths):
-                    self._sel_path_fp = paths[i].fingerprint()
+                    self._sel_path_fp = paths[selection].fingerprint()
                     break
                 else:
                     print("Invalid selection")

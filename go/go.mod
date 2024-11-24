@@ -62,4 +62,6 @@ require (
 	modernc.org/token v1.1.0 // indirect
 )
 
-replace github.com/netsec-ethz/scion-apps => github.com/lschulz/scion-apps v0.0.0-20241006194236-d3f088b386f9
+replace github.com/scionproto/scion => github.com/lschulz/scion v0.11.1-0.20241123215440-de8fff43ab16
+
+replace github.com/netsec-ethz/scion-apps => github.com/lschulz/scion-apps v0.0.0-20241123211024-dcdb2dc92316
