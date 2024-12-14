@@ -127,12 +127,12 @@ Usage example (assuming the `tiny4.topo` topology from the SCION repository):
 ```bash
 # Server
 export SCION_DAEMON_ADDRESS=127.0.0.19:30255
-scion-echo --local 127.0.0.1:51000       # blocking
-scion-echo-async --local 127.0.0.1:51000 # non-blocking
+scion-echo --local 127.0.0.1:31000       # blocking
+scion-echo-async --local 127.0.0.1:31000 # non-blocking
 # Client
 export SCION_DAEMON_ADDRESS=127.0.0.27:30255
-scion-echo --remote 1-ff00:0:111,127.0.0.1:51000       # blocking
-scion-echo-async --remote 1-ff00:0:111,127.0.0.1:51000 # non-blocking
+scion-echo --remote 1-ff00:0:111,127.0.0.1:31000       # blocking
+scion-echo-async --remote 1-ff00:0:111,127.0.0.1:31000 # non-blocking
 ```
 
 Python version:
@@ -140,11 +140,11 @@ Python version:
 # Server
 export PYTHONPATH=${PWD}/python:${PYTHONPATH}
 export SCION_DAEMON_ADDRESS=127.0.0.19:30255
-examples/python/echo.py --local 127.0.0.1:51000         # blocking
-examples/python/echo.py --async --local 127.0.0.1:51000 # non-blocking
+examples/python/echo.py --local 127.0.0.1:31000         # blocking
+examples/python/echo.py --async --local 127.0.0.1:31000 # non-blocking
 # Client
 export PYTHONPATH=${PWD}/python:${PYTHONPATH}
 export SCION_DAEMON_ADDRESS=127.0.0.27:30255
-examples/python/echo.py --remote 1-ff00:0:111,127.0.0.1:51000         # blocking
-examples/python/echo.py --async --remote 1-ff00:0:111,127.0.0.1:51000 # non-blocking
+examples/python/echo.py --remote 1-ff00:0:111,127.0.0.1:31000         # blocking
+examples/python/echo.py --async --remote 1-ff00:0:111,127.0.0.1:31000 # non-blocking
 ```

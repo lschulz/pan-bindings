@@ -369,7 +369,7 @@ extern PanError PanListenConnWriteTo(PanListenConn conn, cvoid_t* buffer, int le
 	`PAN_ERR_FAILED` if the operation failed in some other way.
 \ingroup listen_conn
 */
-extern PanError PanListenConnWriteToWithCtx(PanListenConn conn, PanContext ctx, cvoid_t* buffer, int len, PanUDPAddr to, int* n);
+extern PanError PanListenConnWriteToWithCtx(PanListenConn conn, PanContext pctx, cvoid_t* buffer, int len, PanUDPAddr to, int* n);
 
 /**
 \brief Wrapper for `(pan.ListenConn).WriteToVia`
@@ -496,7 +496,7 @@ extern PanError PanConnWrite(PanListenConn conn, cvoid_t* buffer, int len, int* 
 	`PAN_ERR_FAILED` if the operation failed in some other way.
 \ingroup conn
 */
-extern PanError PanConnWriteWithCtx(PanListenConn conn, PanContext ctx, cvoid_t* buffer, int len, int* n);
+extern PanError PanConnWriteWithCtx(PanListenConn conn, PanContext pctx, cvoid_t* buffer, int len, int* n);
 
 /**
 \brief Wrapper for `(pan.Conn).WriteVia`

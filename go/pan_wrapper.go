@@ -60,6 +60,8 @@ const STREAM_HDR_SIZE = 4
 const ADDR_HDR_SIZE = 32
 const CTX_HDR_SIZE = 8
 
+type ctxPointerKey struct{}
+
 func calloc(num int, size uintptr) unsafe.Pointer {
 	return C.calloc(C.size_t(num), C.size_t(size))
 }
@@ -611,8 +613,8 @@ func NewCSelector(callbacks *C.struct_PanSelectorCallbacks, user C.uintptr_t) *C
 	}
 }
 
-func (s *CSelector) Path(ctx interface{}) *pan.Path {
-	cctx, ok := ctx.(C.PanContext)
+func (s *CSelector) Path(ctx context.Context) *pan.Path {
+	cctx, ok := ctx.Value(ctxPointerKey{}).(C.PanContext)
 	if !ok {
 		cctx = 0
 	}
@@ -681,8 +683,8 @@ func NewCReplySelector(callbacks *C.struct_PanReplySelCallbacks, user C.uintptr_
 	}
 }
 
-func (s *CReplySelector) Path(ctx interface{}, remote pan.UDPAddr) *pan.Path {
-	cctx, ok := ctx.(C.PanContext)
+func (s *CReplySelector) Path(ctx context.Context, remote pan.UDPAddr) *pan.Path {
+	cctx, ok := ctx.Value(ctxPointerKey{}).(C.PanContext)
 	if !ok {
 		cctx = 0
 	}
@@ -933,7 +935,7 @@ func PanListenConnWriteTo(
 //export PanListenConnWriteToWithCtx
 func PanListenConnWriteToWithCtx(
 	conn C.PanListenConn,
-	ctx C.PanContext,
+	pctx C.PanContext,
 	buffer *C.cvoid_t,
 	len C.int,
 	to C.PanUDPAddr,
@@ -943,6 +945,7 @@ func PanListenConnWriteToWithCtx(
 	p := C.GoBytes(unsafe.Pointer(buffer), len)
 	addr := cgo.Handle(to).Value().(pan.UDPAddr)
 
+	ctx := context.WithValue(context.Background(), ctxPointerKey{}, pctx)
 	written, err := c.WriteToWithCtx(ctx, p, addr)
 	if err != nil {
 		setLastError(err)
@@ -1257,7 +1260,7 @@ func PanConnWrite(
 //export PanConnWriteWithCtx
 func PanConnWriteWithCtx(
 	conn C.PanListenConn,
-	ctx C.PanContext,
+	pctx C.PanContext,
 	buffer *C.cvoid_t,
 	len C.int,
 	n *C.int,
@@ -1265,6 +1268,7 @@ func PanConnWriteWithCtx(
 	c := cgo.Handle(conn).Value().(pan.Conn)
 	p := C.GoBytes(unsafe.Pointer(buffer), len)
 
+	ctx := context.WithValue(context.Background(), ctxPointerKey{}, pctx)
 	written, err := c.WriteWithCtx(ctx, p)
 	if err != nil {
 		setLastError(err)
@@ -1555,6 +1559,7 @@ func (ls *ListenSockAdapter) panToUnix() {
 
 func (ls *ListenSockAdapter) unixToPan() {
 	defer ls.close_wg.Done()
+	ctx := context.Background()
 	var buffer = make([]byte, 4096)
 	for {
 		// Read from unix socket
@@ -1583,10 +1588,11 @@ func (ls *ListenSockAdapter) unixToPan() {
 		to.Port = binary.NativeEndian.Uint16(buffer[28:30])
 
 		// Context for path selector
-		ctx := C.PanContext(binary.NativeEndian.Uint64(buffer[32:40]))
+		pctx := C.PanContext(binary.NativeEndian.Uint64(buffer[32:40]))
+		ctxWithPtr := context.WithValue(ctx, ctxPointerKey{}, pctx)
 
 		// Pass to network socket
-		_, err = ls.pan_conn.WriteToWithCtx(ctx, buffer[ADDR_HDR_SIZE+CTX_HDR_SIZE:read], to)
+		_, err = ls.pan_conn.WriteToWithCtx(ctxWithPtr, buffer[ADDR_HDR_SIZE+CTX_HDR_SIZE:read], to)
 		if err != nil {
 			debugPrintf("PAN: ListenSockAdapter unixToPan WriteToWithCtx: %v\n", err)
 			if errors.Is(err, net.ErrClosed) {
@@ -1727,6 +1733,7 @@ func (cs *ConnSockAdapter) panToUnix() {
 
 func (cs *ConnSockAdapter) unixToPan() {
 	defer cs.close_wg.Done()
+	ctx := context.Background()
 	var buffer = make([]byte, 4096)
 	for {
 		// Read from Unix domain socket
@@ -1741,10 +1748,11 @@ func (cs *ConnSockAdapter) unixToPan() {
 		}
 
 		// Context for path selector
-		ctx := C.PanContext(binary.NativeEndian.Uint64(buffer[:CTX_HDR_SIZE]))
+		pctx := C.PanContext(binary.NativeEndian.Uint64(buffer[:CTX_HDR_SIZE]))
+		ctxWithPtr := context.WithValue(ctx, ctxPointerKey{}, pctx)
 
 		// Pass to network socket
-		_, err = cs.pan_conn.WriteWithCtx(ctx, buffer[CTX_HDR_SIZE:read])
+		_, err = cs.pan_conn.WriteWithCtx(ctxWithPtr, buffer[CTX_HDR_SIZE:read])
 		if err != nil {
 			debugPrintf("PAN: ConnSockAdapter unixToPan WriteWithCtx: %v\n", err)
 			if errors.Is(err, net.ErrClosed) {
@@ -1913,6 +1921,7 @@ func (ls *ListenSSockAdapter) panToUnix() {
 
 func (ls *ListenSSockAdapter) unixToPan() {
 	defer ls.close_wg.Done()
+	ctx := context.Background()
 	var buffer = make([]byte, 4096)
 	for {
 		// Read from Unix domain socket
@@ -1954,10 +1963,11 @@ func (ls *ListenSSockAdapter) unixToPan() {
 		to.Port = binary.NativeEndian.Uint16(buffer[28:30])
 
 		// Context for path selector
-		ctx := C.PanContext(binary.NativeEndian.Uint64(buffer[32:40]))
+		pctx := C.PanContext(binary.NativeEndian.Uint64(buffer[32:40]))
+		ctxWithPtr := context.WithValue(ctx, ctxPointerKey{}, pctx)
 
 		// Pass to network socket
-		_, err = ls.pan_conn.WriteToWithCtx(ctx, buffer[ADDR_HDR_SIZE+CTX_HDR_SIZE:read], to)
+		_, err = ls.pan_conn.WriteToWithCtx(ctxWithPtr, buffer[ADDR_HDR_SIZE+CTX_HDR_SIZE:read], to)
 		if err != nil {
 			debugPrintf("PAN: ListenSSockAdapter unixToPan WriteToWithCtx: %v\n", err)
 			if errors.Is(err, net.ErrClosed) {
@@ -2104,6 +2114,7 @@ func (cs *ConnSSockAdapter) panToUnix() {
 
 func (cs *ConnSSockAdapter) unixToPan() {
 	defer cs.close_wg.Done()
+	ctx := context.Background()
 	var buffer = make([]byte, 4096)
 	for {
 		// Read from Unix domain socket
@@ -2131,10 +2142,11 @@ func (cs *ConnSSockAdapter) unixToPan() {
 		}
 
 		// Context for path selector
-		ctx := C.PanContext(binary.NativeEndian.Uint64(buffer[:CTX_HDR_SIZE]))
+		pctx := C.PanContext(binary.NativeEndian.Uint64(buffer[:CTX_HDR_SIZE]))
+		ctxWithPtr := context.WithValue(ctx, ctxPointerKey{}, pctx)
 
 		// Pass to network socket
-		_, err = cs.pan_conn.WriteWithCtx(ctx, buffer[CTX_HDR_SIZE:read])
+		_, err = cs.pan_conn.WriteWithCtx(ctxWithPtr, buffer[CTX_HDR_SIZE:read])
 		if err != nil {
 			debugPrintf("PAN: ConnSSockAdapter unixToPan WriteWithCtx: %v\n", err)
 			if errors.Is(err, net.ErrClosed) {
