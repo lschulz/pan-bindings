@@ -137,13 +137,15 @@ scion-echo-async --remote 1-ff00:0:111,127.0.0.1:31000 # non-blocking
 
 Python version:
 ```bash
+# Install PAN in a venv as an editable package
+python3 -m venv .venv
+. .venv/bin/activate
+python -m pip install -e ./python
 # Server
-export PYTHONPATH=${PWD}/python:${PYTHONPATH}
 export SCION_DAEMON_ADDRESS=127.0.0.19:30255
 examples/python/echo.py --local 127.0.0.1:31000         # blocking
 examples/python/echo.py --async --local 127.0.0.1:31000 # non-blocking
 # Client
-export PYTHONPATH=${PWD}/python:${PYTHONPATH}
 export SCION_DAEMON_ADDRESS=127.0.0.27:30255
 examples/python/echo.py --remote 1-ff00:0:111,127.0.0.1:31000         # blocking
 examples/python/echo.py --async --remote 1-ff00:0:111,127.0.0.1:31000 # non-blocking

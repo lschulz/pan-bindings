@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pan-bindings"
+version = "1.1.0"
+authors = [
+    { name="Lars-Christian Schulz", email="lschulz@ovgu.de" },
+]
+description = "Python language bindings to the PAN library of the SCION Internet architecture project"
+readme = "README.md"
+requires-python = ">=3.10"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: Apache Software License",
+]
+
+[project.urls]
+Homepage = "https://github.com/lschulz/pan-bindings"
+Issues = "https://github.com/lschulz/pan-bindings/issues"

@@ -2,3 +2,4 @@
 /build
 /docs/gen
 __pycache__
+.venv
