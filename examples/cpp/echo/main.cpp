@@ -179,7 +179,7 @@ int runServer(Arguments& args)
     CON_WIN32(std::cout << stream.str());
     CON_CURSES(ncurses::print(stream.str().c_str()));
 
-    std::vector<char> buffer(2028);
+    std::vector<char> buffer(2048);
     Pan::udp::Endpoint from;
     Pan::Path path;
 
@@ -246,7 +246,7 @@ int runClient(Arguments& args)
             read = conn.readVia(asio::buffer(buffer), &path);
         else
             read = conn.read(asio::buffer(buffer));
-        if (!args.quiet){
+        if (!args.quiet) {
             std::cout << "Received " << read << " bytes:\n";
             printBuffer(std::cout, buffer.data(), read) << '\n';
             if (path) std::cout << "Path: " << path.toString() << '\n';
