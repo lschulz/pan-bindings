@@ -87,22 +87,22 @@ public:
     { return handle >= other.handle; }
 
     /// \brief Check whether the handle is not `PAN_INVALID_HANDLE`.
-    operator bool() const { return handle != INVALID_HANDLE; }
+    operator bool() const noexcept { return handle != INVALID_HANDLE; }
 
     /// \brief Check whether the handle is not `PAN_INVALID_HANDLE`.
-    bool isValid() const { return handle != INVALID_HANDLE; }
+    bool isValid() const noexcept { return handle != INVALID_HANDLE; }
 
     /// \brief Get the contained handle.
     std::uintptr_t get() const noexcept { return handle; }
 
     /// \brief Get a pointer to the contained handle.
     /// \return Const pointer to contained handle.
-    const std::uintptr_t *const getAddressOf() const { return &handle; }
+    const std::uintptr_t *const getAddressOf() const noexcept { return &handle; }
 
     /// \brief Release the old handle and return the address of the contained
     /// handle for assignment of a new value.
     /// \return Mutable pointer to contained handle.
-    std::uintptr_t* resetAndGetAddressOf()
+    std::uintptr_t* resetAndGetAddressOf() noexcept
     {
         reset();
         return &handle;
@@ -128,7 +128,7 @@ public:
 
     }
 
-    friend void swap(GoHandle &a, GoHandle &b)
+    friend void swap(GoHandle &a, GoHandle &b) noexcept
     {
         std::swap(a.handle, b.handle);
     }

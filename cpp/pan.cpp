@@ -410,7 +410,7 @@ Endpoint ResolveUDPAddr(const char* address, std::error_code &ec) noexcept
 }
 
 DLLEXPORT
-Endpoint::Endpoint(IA ia, const asio::ip::address &ip, std::uint16_t port)
+Endpoint::Endpoint(IA ia, const asio::ip::address &ip, std::uint16_t port) noexcept
 {
     if (ip.is_v4()) {
         auto bytes = ip.to_v4().to_bytes();

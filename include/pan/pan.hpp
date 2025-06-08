@@ -100,7 +100,7 @@ class PathInterface final
 {
 public:
     PathInterface() = default;
-    explicit PathInterface(GoHandle&& handle)
+    explicit PathInterface(GoHandle&& handle) noexcept
         : h(std::move(handle))
     {}
 
@@ -117,7 +117,7 @@ class PathFingerprint final
 {
 public:
     PathFingerprint() = default;
-    explicit PathFingerprint(GoHandle&& handle)
+    explicit PathFingerprint(GoHandle&& handle) noexcept
         : h(std::move(handle))
     {}
 
@@ -178,7 +178,7 @@ class Path final
 {
 public:
     Path() = default;
-    explicit Path(GoHandle&& handle)
+    explicit Path(GoHandle&& handle) noexcept
         : h(std::move(handle))
     {}
 
@@ -232,6 +232,7 @@ class PathPolicy
 public:
     DLLEXPORT
     PathPolicy();
+    virtual ~PathPolicy() = default;
 
     operator bool() const noexcept { return h.isValid(); }
     bool isValid() const noexcept { return h.isValid(); }
@@ -256,6 +257,7 @@ class PathSelector
 public:
     DLLEXPORT
     PathSelector();
+    virtual ~PathSelector() = default;
 
     operator bool() const noexcept { return h.isValid(); }
     bool isValid() const noexcept { return h.isValid(); }
@@ -289,6 +291,7 @@ class ReplySelector
 public:
     DLLEXPORT
     ReplySelector();
+    virtual ~ReplySelector() = default;
 
     operator bool() const noexcept { return h.isValid(); }
     bool isValid() const noexcept { return h.isValid(); }
@@ -320,14 +323,14 @@ class Endpoint final
 {
 public:
     Endpoint() = default;
-    explicit Endpoint(GoHandle&& handle)
+    explicit Endpoint(GoHandle&& handle) noexcept
         : h(std::move(handle))
     {}
-    Endpoint(IA ia, const asio::ip::udp::endpoint& ep)
+    Endpoint(IA ia, const asio::ip::udp::endpoint& ep) noexcept
         : Endpoint(ia, ep.address(), ep.port())
     {}
     DLLEXPORT
-    Endpoint(IA ia, const asio::ip::address& ip, std::uint16_t port);
+    Endpoint(IA ia, const asio::ip::address& ip, std::uint16_t port) noexcept;
 
     operator bool() const noexcept { return h.isValid(); }
     bool isValid() const noexcept { return h.isValid(); }
@@ -374,7 +377,7 @@ public:
     ListenSockAdapter& operator=(const ListenSockAdapter& other) = delete;
     ListenSockAdapter& operator=(ListenSockAdapter&& other) = default;
 
-    ~ListenSockAdapter() noexcept { close(); }
+    ~ListenSockAdapter() { close(); }
 
     operator bool() const noexcept { return h.isValid(); }
     bool isValid() const noexcept { return h.isValid(); }
@@ -386,7 +389,7 @@ public:
 
 private:
     DLLEXPORT
-    ListenSockAdapter(GoHandle handle);
+    ListenSockAdapter(GoHandle handle) noexcept;
     friend class ListenConn;
 
 private:
@@ -409,7 +412,7 @@ public:
     ListenSSockAdapter& operator=(const ListenSSockAdapter& other) = delete;
     ListenSSockAdapter& operator=(ListenSSockAdapter&& other) = default;
 
-    ~ListenSSockAdapter() noexcept { close(); }
+    ~ListenSSockAdapter() { close(); }
 
     operator bool() const noexcept { return h.isValid(); }
     bool isValid() const noexcept { return h.isValid(); }
@@ -448,7 +451,7 @@ public:
     ListenConn& operator=(const ListenConn& other) = delete;
     ListenConn& operator=(ListenConn&& other) = default;
 
-    ~ListenConn() noexcept { close(); }
+    ~ListenConn() { close(); }
 
     operator bool() const noexcept { return h.isValid(); }
     bool isValid() const noexcept { return h.isValid(); }
@@ -528,7 +531,7 @@ public:
     ConnSockAdapter& operator=(const ConnSockAdapter& other) = delete;
     ConnSockAdapter& operator=(ConnSockAdapter&& other) = default;
 
-    ~ConnSockAdapter() noexcept { close(); }
+    ~ConnSockAdapter() { close(); }
 
     operator bool() const noexcept { return h.isValid(); }
     bool isValid() const noexcept { return h.isValid(); }
@@ -563,7 +566,7 @@ public:
     ConnSSockAdapter& operator=(const ConnSSockAdapter& other) = delete;
     ConnSSockAdapter& operator=(ConnSSockAdapter&& other) = default;
 
-    ~ConnSSockAdapter() noexcept { close(); }
+    ~ConnSSockAdapter() { close(); }
 
     operator bool() const noexcept { return h.isValid(); }
     bool isValid() const noexcept { return h.isValid(); }
