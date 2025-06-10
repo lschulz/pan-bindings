@@ -21,7 +21,7 @@ set(PUBLIC_HEADERS
 )
 set_target_properties(pan_cpp PROPERTIES
     PUBLIC_HEADER "${PUBLIC_HEADERS}"
-    VERSION "1.1.0"
+    VERSION "1.1.1"
     SOVERSION "1"
 )
 install(TARGETS pan_cpp

@@ -18,16 +18,16 @@ bindings require an installation of Python 3.
 Since PAN depends on quic-go and quic-go only supports a narrow range of Go
 versions with each release, your system-wide installation of Go might be too old
 or too new to compile PAN. The current release of pan-bindings has been tested
-with **Go 1.22.8**. If you have an unsupported version of Go installed, you can
+with **Go 1.24.4**. If you have an unsupported version of Go installed, you can
 download a separate copy of Go and specify the absolute path the to `go` binary
 in the CMake cache variable `GO_BINARY` (defaults to `go`). Go itself can
 install additional version, e.g.:
 ```bash
-go install golang.org/dl/go1.22.8@latest
-# Go will usually install the new go binary in `~/go/bin/`. Add this directrory
+go install golang.org/dl/go1.24.4@latest
+# Go will usually install the new go binary in `~/go/bin/`. Add this directory
 # to PATH or use the full path for the next command.
-go1.22.8 download
-# Run cmake with -D GO_BINARY=$(which go1.22.8)
+go1.24.4 download
+# Run cmake with -D GO_BINARY=$(which go1.24.4)
 ```
 
 Building the C++ bindings requires standalone (non-boost) Asio. The C++ examples
@@ -60,10 +60,10 @@ This will install the following files:
 ```
 ${CMAKE_INSTALL_PREFIX}/include/pan/pan.h
 ${CMAKE_INSTALL_PREFIX}/include/pan/pan_cdefs.h
-${CMAKE_INSTALL_PREFIX}/lib/libpan.so.1.1.0
+${CMAKE_INSTALL_PREFIX}/lib/libpan.so.1.1.1
 ${CMAKE_INSTALL_PREFIX}/lib/libpan.so.1
 ${CMAKE_INSTALL_PREFIX}/lib/libpan.so
-${CMAKE_INSTALL_PREFIX}/lib/libpancpp.so.1.1.0
+${CMAKE_INSTALL_PREFIX}/lib/libpancpp.so.1.1.1
 ${CMAKE_INSTALL_PREFIX}/lib/libpancpp.so.1
 ${CMAKE_INSTALL_PREFIX}/lib/libpancpp.so
 ${CMAKE_INSTALL_PREFIX}/include/pan/pan.hpp
@@ -75,7 +75,7 @@ ${CMAKE_INSTALL_PREFIX}/bin/scion-echo-async
 The debug versions of the libraries have a `d` suffix and can be installed in
 parallel to the release version.
 
-#### Windows 10/11 (MSYS2 MinGW)
+#### Windows 11 (MSYS2 MinGW)
 Install [MSYS2](https://www.msys2.org/) and Go. The following MSYS2 packets are
 required:
 ```bash

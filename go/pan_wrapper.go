@@ -761,7 +761,6 @@ func PanListenUDP(
 	listen *C.cchar_t, selector C.PanReplySelector, conn *C.PanListenConn) C.PanError {
 
 	var local netip.AddrPort
-	var sel pan.ReplySelector
 	var err error
 
 	if listen != nil {
@@ -772,11 +771,13 @@ func PanListenUDP(
 		}
 	}
 
+	opts := make([]pan.ListenConnOptions, 0, 1)
 	if selector != 0 {
-		sel = cgo.Handle(selector).Value().(pan.ReplySelector)
+		sel := cgo.Handle(selector).Value().(pan.ReplySelector)
+		opts = append(opts, pan.WithReplySelector(sel))
 	}
 
-	c, err := pan.ListenUDP(context.Background(), local, sel)
+	c, err := pan.ListenUDP(context.Background(), local, opts...)
 	if err != nil {
 		setLastError(err)
 		return C.PAN_ERR_FAILED
@@ -1100,8 +1101,6 @@ func PanDialUDP(
 ) C.PanError {
 
 	var loc netip.AddrPort = netip.AddrPort{}
-	var pol pan.Policy = nil
-	var sel pan.Selector = nil
 	var err error
 
 	if local != nil {
@@ -1112,13 +1111,17 @@ func PanDialUDP(
 		}
 	}
 	rem := cgo.Handle(remote).Value().(pan.UDPAddr)
+
+	opts := make([]pan.ConnOptions, 0, 2)
 	if policy != 0 {
-		pol = cgo.Handle(policy).Value().(pan.Policy)
+		pol := cgo.Handle(policy).Value().(pan.Policy)
+		opts = append(opts, pan.WithPolicy(pol))
 	}
 	if selector != 0 {
-		sel = cgo.Handle(selector).Value().(pan.Selector)
+		sel := cgo.Handle(selector).Value().(pan.Selector)
+		opts = append(opts, pan.WithSelector(sel))
 	}
-	c, err := pan.DialUDP(context.Background(), loc, rem, pol, sel)
+	c, err := pan.DialUDP(context.Background(), loc, rem, opts...)
 	if err != nil {
 		setLastError(err)
 		return C.PAN_ERR_FAILED
