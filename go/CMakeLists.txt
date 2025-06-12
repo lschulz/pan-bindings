@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.16)
+cmake_minimum_required(VERSION 3.24)
 
 set(SRC pan_wrapper.go)
 set(HEADERS
@@ -77,7 +77,7 @@ if (${BUILD_SHARED_LIBS})
     add_library(pan_shared SHARED "$<TARGET_OBJECTS:pan_c>")
     add_dependencies(pan_shared pan_c)
     target_link_libraries(pan_shared PRIVATE
-        "-Wl,--whole-archive $<TARGET_FILE:cgo_imported> -Wl,--no-whole-archive")
+        "$<LINK_LIBRARY:WHOLE_ARCHIVE,cgo_imported>")
     target_include_directories(pan_shared INTERFACE ${PROJECT_SOURCE_DIR}/include)
     set_target_properties(pan_shared PROPERTIES
         OUTPUT_NAME pan
@@ -85,6 +85,17 @@ if (${BUILD_SHARED_LIBS})
         VERSION "1.1.1"
         SOVERSION "1"
     )
+    if (APPLE)
+        find_library(LIB_RESOLV resolv)
+        if (NOT LIB_RESOLV)
+            message(FATAL_ERROR "Could not find 'resolv' library on macOS. Please install it.")
+        endif()
+        target_link_libraries(pan_shared PRIVATE
+            "$<LINK_LIBRARY:FRAMEWORK,CoreFoundation>"
+            "$<LINK_LIBRARY:FRAMEWORK,Security>"
+            ${LIB_RESOLV}
+        )
+    endif()
     if (WIN32)
         target_link_libraries(pan_shared PRIVATE Ws2_32.lib)
     endif()
