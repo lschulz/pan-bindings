@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.16)
+cmake_minimum_required(VERSION 3.24)
 
 add_library(pan_cpp
     go_handle.cpp
@@ -11,6 +11,17 @@ set_target_properties(pan_cpp PROPERTIES
     OUTPUT_NAME pancpp
     DEBUG_POSTFIX "d"
 )
+if (APPLE)
+    find_library(LIB_RESOLV resolv)
+    if (NOT LIB_RESOLV)
+        message(FATAL_ERROR "Could not find 'resolv' library on macOS. Please install it.")
+    endif()
+    target_link_libraries(pan_cpp PRIVATE
+        "$<LINK_LIBRARY:FRAMEWORK,CoreFoundation>"
+        "$<LINK_LIBRARY:FRAMEWORK,Security>"
+        ${LIB_RESOLV}
+    )
+endif()
 if (WIN32)
     target_link_libraries(pan_cpp INTERFACE Ws2_32.lib)
 endif()
